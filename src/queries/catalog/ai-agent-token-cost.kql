@@ -1,0 +1,122 @@
+// ============================================================================
+// Query: AI Agent Token Cost (agent-level, FOCUS-shaped)
+//
+// Purpose:
+//   Produce AGENT-LEVEL token cost from gen_ai OpenTelemetry traces emitted by
+//   Microsoft Foundry / Agent Framework workloads. This closes the granularity
+//   gap in the AI Foundry Grafana dashboard, which is built on Cognitive
+//   Services platform metrics (microsoft.cognitiveservices/accounts) whose only
+//   dimensions are ModelName / ModelDeploymentName / StatusCode -- there is NO
+//   agent or session dimension in that metric stream, so no rewrite of that
+//   dashboard can attribute spend to an agent. Agent identity only exists in
+//   the gen_ai.* trace attributes (agent id, conversation/session id, per-call
+//   token usage), which this query reads.
+//
+// Source:
+//   Application Insights `dependencies` (shown here) OR Log Analytics
+//   `AppDependencies` OR the same rows ingested into an ADX/Fabric table.
+//   Spans of interest are the token-bearing model-call spans. This query works
+//   against BOTH producers and their differing schemas:
+//     * Foundry-native project tracing (enable an App Insights connection on the
+//       Foundry project): span type "InProc", name "chat <model>", agent identity
+//       in microsoft.gen_ai.main_agent.* / microsoft.session.id / microsoft.tenant.id.
+//     * OpenTelemetry OpenAI instrumentation (self-hosted / externally hosted
+//       agents): span type "GenAI | ...", agent identity in the gen_ai.* semconv
+//       attributes. The query coalesces both vocabularies, so no workload change
+//       is required to light up on real Foundry-managed agents.
+//
+// Pricing:
+//   Uses an inline rate-card datatable (USD per 1M tokens, gpt-5 family list
+//   prices -- replace with contracted/MACC rates). In the FinOps Hub, prefer
+//   joining to the authoritative Costs() type function instead (see the
+//   "Toolkit integration" note at the bottom) so pricing stays canonical.
+//
+// Output:
+//   One row per agent / model / cost center with input, cached, and output
+//   token counts and estimated cost, projected into FOCUS-style columns
+//   (ConsumedQuantity/Unit, EffectiveCost, plus x_ agent extensions).
+// ============================================================================
+
+let lookback = 30d;
+// Rate card: USD per 1,000,000 tokens. Replace with your price sheet.
+let rateCard = datatable(Model:string, InputPer1M:real, CachedInputPer1M:real, OutputPer1M:real)
+[
+    "gpt-5",      1.25, 0.125, 10.0,
+    "gpt-5-mini", 0.25, 0.025,  2.0,
+    "gpt-5-nano", 0.05, 0.005,  0.4
+];
+dependencies
+| where timestamp > ago(lookback)
+| extend d = parse_json(customDimensions)
+// Select token-bearing model-call spans. Detect by the presence of usage tokens
+// rather than by span type, because the two producers differ:
+//   * Foundry-native project tracing  -> type "InProc",          name "chat <model>"
+//   * OpenTelemetry OpenAI instrumentation -> type "GenAI | ...", name "chat <model>"
+| where isnotempty(d["gen_ai.usage.input_tokens"]) or isnotempty(d["gen_ai.usage.output_tokens"])
+// Read both attribute vocabularies. Foundry emits microsoft.* names; the OTel
+// gen_ai semantic conventions emit gen_ai.* names. coalesce() takes whichever exists.
+| extend AgentId    = tostring(coalesce(d["microsoft.gen_ai.main_agent.id"],   d["gen_ai.agent.id"])),
+         AgentName  = tostring(coalesce(d["microsoft.gen_ai.main_agent.name"], d["gen_ai.agent.name"])),
+         SessionId  = tostring(coalesce(d["microsoft.gen_ai.main_agent.conversation_id"], d["microsoft.session.id"], d["gen_ai.conversation.id"])),
+         // request.model is the clean deployment name; response.model carries a date suffix (e.g. -2026-03-17)
+         Model      = tostring(coalesce(d["gen_ai.request.model"], d["gen_ai.response.model"])),
+         TenantId   = tostring(d["microsoft.tenant.id"]),
+         ProjectId  = tostring(d["microsoft.foundry.project.id"]),
+         Team       = tostring(d["finops.team"]),
+         CostCenter = tostring(d["finops.cost_center"]),
+         InputTokens  = tolong(d["gen_ai.usage.input_tokens"]),
+         OutputTokens = tolong(d["gen_ai.usage.output_tokens"]),
+         CachedTokens = tolong(coalesce(d["gen_ai.usage.cache_read.input_tokens"], d["gen_ai.usage.cached_input_tokens"], "0"))
+| where isnotempty(AgentId)
+| extend UncachedInputTokens = InputTokens - CachedTokens
+| summarize
+        Calls        = count(),
+        Sessions     = dcount(SessionId),
+        InputTokens  = sum(InputTokens),
+        CachedTokens = sum(CachedTokens),
+        UncachedInputTokens = sum(UncachedInputTokens),
+        OutputTokens = sum(OutputTokens)
+    by AgentId, AgentName, Model, Team, CostCenter, TenantId, ProjectId
+| lookup kind=leftouter rateCard on Model
+| extend
+        InputCost  = (UncachedInputTokens / 1000000.0) * InputPer1M,
+        CachedCost = (CachedTokens        / 1000000.0) * CachedInputPer1M,
+        OutputCost = (OutputTokens        / 1000000.0) * OutputPer1M
+| extend EffectiveCost = round(InputCost + CachedCost + OutputCost, 6)
+| extend ConsumedQuantity = InputTokens + OutputTokens,
+         ConsumedUnit     = "Tokens",
+         BillingCurrency  = "USD",
+         x_SourceProvider = "Foundry",
+         ChargeCategory   = "Usage",
+         ServiceCategory  = "AI and Machine Learning"
+// FOCUS-shaped projection with agent-level x_ extensions
+| project
+        x_AgentId    = AgentId,
+        x_AgentName  = AgentName,
+        x_CostCenter = CostCenter,
+        x_Team       = Team,
+        x_TenantId   = TenantId,
+        x_ProjectId  = ProjectId,
+        SkuMeter     = Model,
+        Sessions, Calls,
+        InputTokens, CachedTokens, OutputTokens,
+        ConsumedQuantity, ConsumedUnit,
+        EffectiveCost, BillingCurrency,
+        x_SourceProvider, ChargeCategory, ServiceCategory
+| order by EffectiveCost desc
+//
+// ----------------------------------------------------------------------------
+// Toolkit integration (FinOps Hub): replace the inline rateCard with the
+// authoritative price sheet from the hub. Because the gen_ai traces live in
+// Log Analytics/App Insights and Costs() lives in the ADX Hub database, do a
+// cross-service join, e.g. (ADX side):
+//
+//   let genai = externaldata(...)  // or adx()/arg() bridge to AppDependencies
+//   Costs()
+//   | where x_SkuMeterSubcategory has "OpenAI"
+//   | summarize ListUnitPrice = ... by SkuMeter          // authoritative $/token
+//   | join kind=inner (genai summarize tokens by Model, AgentId) on ...
+//
+// This yields agent-level EffectiveCost using canonical pricing, ready to land
+// as FOCUS 1.5 rows (x_Agent* extensions) via the hub ingestion pipeline.
+// ----------------------------------------------------------------------------
