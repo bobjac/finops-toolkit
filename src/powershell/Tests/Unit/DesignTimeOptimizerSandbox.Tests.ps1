@@ -63,6 +63,7 @@ Describe 'Design-time optimizer sandbox preflight' {
             })
         $script:Azure.Usage = @(@{ name = @{ value = 'discovered-usage-name' }; limit = 10; currentValue = 0 })
         $script:Azure.QuotaError = ''
+        $script:Azure.StorageError = ''
         $script:Azure.QueryResult = @(@{ FrameType = 'DataSetCompletion'; HasErrors = $false })
         $script:Azure.Calls = [Collections.Generic.List[string]]::new()
         # Native-command mocks run in the invoked script's scope, not this test's script scope.
@@ -87,7 +88,10 @@ Describe 'Design-time optimizer sandbox preflight' {
             elseif ($call -like 'cognitiveservices model list*') { $response = $state.Models }
             elseif ($call -like 'cognitiveservices usage list*') { $response = $state.Usage }
             elseif ($call -match '/Microsoft.Storage/storageAccounts/teststorage\?') { $response = @{ name = 'teststorage' } }
-            elseif ($call -like 'storage container list*') { $response = @() }
+            elseif ($call -like 'storage container list*') {
+                if ($state.StorageError) { $global:LASTEXITCODE = 1; return $state.StorageError }
+                $response = @()
+            }
             elseif ($call -match '/Microsoft.Kusto/clusters/testcluster\?') { $response = @{ properties = @{ uri = 'https://testcluster.eastus2.kusto.windows.net' } } }
             elseif ($call -match '/v2/rest/query ') { $response = $state.QueryResult }
             else { throw "Unexpected Azure operation in test: $call" }
@@ -228,6 +232,7 @@ Describe 'Design-time optimizer sandbox preflight' {
         $result.ReadyForDataIngestion | Should -BeTrue
         @($script:Azure.Calls | Where-Object { $_ -like 'storage container list*--auth-mode login*' }).Count | Should -Be 1
         @($script:Azure.Calls | Where-Object { $_ -match '/v2/rest/query ' }).Count | Should -Be 2
+        @($script:Azure.Calls | Where-Object { $_ -match '/v2/rest/query .*--resource https://api.kusto.windows.net ' }).Count | Should -Be 2
         $script:Azure.QueryResult[0].HasErrors = $true
         { & $script:Validator -Path $script:ConfigPath -RequireDataPlane -ReportPath $script:ReportPath } | Should -Throw '*Data-plane access*'
         (Get-Content $script:ReportPath -Raw | ConvertFrom-Json).ReadyForDataIngestion | Should -BeFalse
@@ -242,5 +247,17 @@ Describe 'Design-time optimizer sandbox preflight' {
             Where-Object Name -EQ 'Data-plane access' |
             Select-Object -ExpandProperty Detail |
             Should -Match 'configured sandbox subscription'
+    }
+
+    It 'Records a sanitized authentication error code without persisting native credential text' {
+        $script:Config.dataPlane.storageAccountResourceId = "/subscriptions/$env:AZURE_SUBSCRIPTION_ID/resourceGroups/test/providers/Microsoft.Storage/storageAccounts/teststorage"
+        $script:Config.dataPlane.dataExplorerResourceId = "/subscriptions/$env:AZURE_SUBSCRIPTION_ID/resourceGroups/test/providers/Microsoft.Kusto/clusters/testcluster"
+        $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
+        $script:Azure.Permissions[0].dataActions = @('*')
+        $script:Azure.StorageError = 'ERROR: AADSTS700024: client assertion expired. do-not-record-test-token'
+        { & $script:Validator -Path $script:ConfigPath -RequireDataPlane -ReportPath $script:ReportPath } | Should -Throw '*Data-plane access*'
+        $text = Get-Content $script:ReportPath -Raw
+        $text | Should -Not -Match 'do-not-record-test-token'
+        (($text | ConvertFrom-Json).Checks | Where-Object Name -EQ 'Data-plane access').Evidence.ErrorCode | Should -Be 'AADSTS700024'
     }
 }

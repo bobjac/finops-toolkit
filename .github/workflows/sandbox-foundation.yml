@@ -105,7 +105,22 @@ jobs:
             -Operation $env:FOUNDATION_OPERATION `
             -ConfirmResourceGroup $env:FOUNDATION_CONFIRMATION `
             -OutputDirectory "$env:RUNNER_TEMP/foundation" `
-            -DeploymentPasses 2 -Confirm:$false
+            -DeploymentPasses 2 -DeferDataPlaneVerification:($env:FOUNDATION_OPERATION -eq 'Deploy') -Confirm:$false
+
+      - name: Refresh Azure sign-in after deployment
+        if: always() && inputs.operation == 'Deploy'
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify actual data-plane access after redeployment
+        if: inputs.operation == 'Deploy'
+        shell: pwsh
+        run: |
+          ./src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1 `
+            -Operation Verify -OutputDirectory "$env:RUNNER_TEMP/foundation-verification"
 
       - name: Remove only a failed foundation created by this run
         if: always() && inputs.operation == 'Deploy'
@@ -115,6 +130,11 @@ jobs:
           if (-not (Test-Path -LiteralPath $path)) { exit 0 }
           $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
           if (-not $report.CreatedThisRun -or $report.RunId -ne $env:GITHUB_RUN_ID -or $report.Status -eq 'VerifiedAndRetained') { exit 0 }
+          $verifiedPath = "$env:RUNNER_TEMP/foundation-verification/foundation.json"
+          if (Test-Path -LiteralPath $verifiedPath) {
+            $verified = Get-Content -LiteralPath $verifiedPath -Raw | ConvertFrom-Json
+            if ($verified.Status -eq 'VerifiedAndRetained' -and $verified.RunId -eq $env:GITHUB_RUN_ID) { exit 0 }
+          }
           ./src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1 `
             -Operation Remove -ConfirmResourceGroup $report.ResourceGroup `
             -OutputDirectory "$env:RUNNER_TEMP/foundation-cleanup" -Confirm:$false
@@ -129,12 +149,17 @@ jobs:
             exit 0
           }
           $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $passes = @($report.Passes).Count
+          $verifiedPath = "$env:RUNNER_TEMP/foundation-verification/foundation.json"
+          if (Test-Path -LiteralPath $verifiedPath) {
+            $report = Get-Content -LiteralPath $verifiedPath -Raw | ConvertFrom-Json
+          }
           @(
             '### Sandbox foundation'
             "Revision: $env:GITHUB_SHA"
             "Operation: $($report.Operation); status: $($report.Status)"
             "Resource group: $($report.ResourceGroup)"
-            "Verified deployment passes: $(@($report.Passes).Count)"
+            "Verified deployment passes: $passes"
             "Ready for data ingestion: $($report.ReadyForDataIngestion)"
             "Configured expiration: $($report.ExpiresOn)"
             ''
@@ -151,6 +176,7 @@ jobs:
           name: sandbox-foundation-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/foundation/*.json
+            ${{ runner.temp }}/foundation-verification/*.json
             ${{ runner.temp }}/foundation-cleanup/*.json
           if-no-files-found: warn
           retention-days: 7

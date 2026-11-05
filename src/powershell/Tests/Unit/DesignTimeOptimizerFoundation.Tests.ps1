@@ -177,6 +177,21 @@ Describe 'Owned sandbox foundation lifecycle' {
         (Get-Content (Join-Path $script:Output 'foundation.json') -Raw | ConvertFrom-Json).ReadyForDataIngestion | Should -BeFalse
     }
 
+    It 'Defers only data-plane verification without claiming readiness or final success' {
+        $script:State.Exists = $false
+        $result = & $script:Lifecycle -Operation Deploy -Path $script:ConfigPath -TemplateFile $script:Template -OutputDirectory $script:Output -ConfirmResourceGroup $script:Plan.ResourceGroup -DeploymentPasses 2 -DeferDataPlaneVerification -Confirm:$false
+        $result.Status | Should -Be 'DeployedAwaitingDataPlaneVerification'
+        $result.ReadyForDataIngestion | Should -BeFalse
+        $result.Passes.Count | Should -Be 2
+        $result.Passes[1].Verification | Should -Be 'ControlPlaneOnly'
+        @($script:State.Calls | Where-Object { $_ -like 'storage container list*' -or $_ -match '/v2/rest/query ' }).Count | Should -Be 0
+    }
+
+    It 'Does not allow Verify to bypass actual data-plane verification' {
+        { & $script:Lifecycle -Path $script:ConfigPath -OutputDirectory $script:Output -DeferDataPlaneVerification } | Should -Throw '*only valid for Deploy*'
+        $script:State.Calls.Count | Should -Be 0
+    }
+
     It 'Preserves a previously retained foundation when redeployment fails' {
         $script:State.DeployFails = $true
         { & $script:Lifecycle -Operation Deploy -Path $script:ConfigPath -TemplateFile $script:Template -OutputDirectory $script:Output -ConfirmResourceGroup $script:Plan.ResourceGroup -Confirm:$false } | Should -Throw '*Provisioning denied*'

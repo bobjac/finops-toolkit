@@ -84,7 +84,12 @@ function Invoke-SandboxAzureRead
     $output = & az @Arguments --only-show-errors --output json 2>&1
     if ($LASTEXITCODE -ne 0)
     {
-        $exception = [InvalidOperationException]::new("Azure CLI failed during '$Operation' (exit $LASTEXITCODE). Check the identity's access and service availability.")
+        $diagnostic = 'Unclassified'
+        $text = $output -join "`n"
+        if ($text -match '\bAADSTS\d+\b') { $diagnostic = $Matches[0] }
+        elseif ($text -match '(?i)(?:ErrorCode[:=]\s*|"code"\s*:\s*")([A-Za-z][A-Za-z0-9]+)') { $diagnostic = $Matches[1] }
+        $exception = [InvalidOperationException]::new("Azure CLI failed during '$Operation' (exit $LASTEXITCODE; $diagnostic). Check the identity's access and service availability.")
+        $exception.Data['Evidence'] = @{ Operation = $Operation; ExitCode = $LASTEXITCODE; ErrorCode = $diagnostic }
         if ($Operation -eq 'Model quota API' -and ($output -join "`n") -match '(?i)(not supported|UnsupportedResourceProvider|ResourceProviderNotSupported)')
         {
             $exception.Data['UnsupportedQuotaProvider'] = $true
@@ -317,7 +322,7 @@ if (-not $ConfigurationOnly)
             foreach ($function in 'Costs', 'Prices')
             {
                 $body = @{ db = $config.dataPlane.database; csl = "$function() | take 0" } | ConvertTo-Json -Compress
-                $result = @(Invoke-SandboxAzureRead -Operation 'Data Explorer query' -Arguments @('rest', '--method', 'post', '--url', "$($uri.AbsoluteUri.TrimEnd('/'))/v2/rest/query", '--resource', $uri.AbsoluteUri.TrimEnd('/'), '--body', $body))
+                $result = @(Invoke-SandboxAzureRead -Operation 'Data Explorer query' -Arguments @('rest', '--method', 'post', '--url', "$($uri.AbsoluteUri.TrimEnd('/'))/v2/rest/query", '--resource', 'https://api.kusto.windows.net', '--body', $body))
                 $complete = @($result | Where-Object { $_.FrameType -eq 'DataSetCompletion' -and $_.HasErrors -eq $false }).Count -eq 1
                 if (-not $complete -or @($result | Where-Object { $_.HasErrors -or $_.error }).Count) { throw 'Data Explorer reported an incomplete or failed read-only query.' }
             }

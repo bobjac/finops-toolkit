@@ -30,6 +30,10 @@
     .PARAMETER DeploymentPasses
     Number of deployment and verification passes. Use two to validate redeployment.
 
+    .PARAMETER DeferDataPlaneVerification
+    Verifies deployment metadata only and reports data-plane readiness as false.
+    Allows workflows to refresh OIDC sign-in after long deployments, then Verify.
+
     .EXAMPLE
     ./src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1 -Operation Verify
 
@@ -47,7 +51,8 @@ param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '../../.tmp/foundation'),
     [string]$TemplateFile = (Join-Path $PSScriptRoot '../../release/hack-foundation.json'),
     [string]$ConfirmResourceGroup,
-    [ValidateRange(1, 2)][int]$DeploymentPasses = 1
+    [ValidateRange(1, 2)][int]$DeploymentPasses = 1,
+    [switch]$DeferDataPlaneVerification
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,6 +63,10 @@ if (-not ($content | Test-Json -SchemaFile $schema -ErrorAction SilentlyContinue
     throw 'Sandbox configuration does not match the sandbox JSON Schema.'
 }
 $config = $content | ConvertFrom-Json -AsHashtable -Depth 30
+if ($DeferDataPlaneVerification -and $Operation -ne 'Deploy')
+{
+    throw 'DeferDataPlaneVerification is only valid for Deploy; run Verify separately after refreshing sign-in.'
+}
 foreach ($name in 'AZURE_SUBSCRIPTION_ID', 'AZURE_TENANT_ID')
 {
     $identifier = [guid]::Empty
@@ -172,25 +181,28 @@ function Test-FoundationDeployment
     }
     $resolvedPath = Join-Path $OutputDirectory 'sandbox.resolved.json'
     $resolved | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $resolvedPath
-    for ($attempt = 1; $attempt -le 6; $attempt++)
+    if (-not $DeferDataPlaneVerification)
     {
-        try
+        for ($attempt = 1; $attempt -le 6; $attempt++)
         {
-            $readiness = & "$PSScriptRoot/Test-DesignTimeOptimizerSandbox.ps1" -Path $resolvedPath -RequireDataPlane -ReportPath (Join-Path $OutputDirectory 'data-plane.json')
-            if (-not $readiness.ReadyForDataIngestion) { throw 'Deployed foundation is not ready for data ingestion.' }
-            break
-        }
-        catch
-        {
-            if ($Operation -ne 'Deploy' -or $attempt -eq 6 -or @($_.Exception.Data['FailedChecks']).Count -ne 1 -or $_.Exception.Data['FailedChecks'][0] -ne 'Data-plane access') { throw }
-            Write-Warning "Data-plane verification failed; allowing role propagation before retry $($attempt + 1)/6. $($_.Exception.Message)"
-            Start-Sleep -Seconds 60
+            try
+            {
+                $readiness = & "$PSScriptRoot/Test-DesignTimeOptimizerSandbox.ps1" -Path $resolvedPath -RequireDataPlane -ReportPath (Join-Path $OutputDirectory 'data-plane.json')
+                if (-not $readiness.ReadyForDataIngestion) { throw 'Deployed foundation is not ready for data ingestion.' }
+                $report.ReadyForDataIngestion = $true
+                break
+            }
+            catch
+            {
+                if ($attempt -eq 6 -or @($_.Exception.Data['FailedChecks']).Count -ne 1 -or $_.Exception.Data['FailedChecks'][0] -ne 'Data-plane access') { throw }
+                Write-Warning "Data-plane verification failed; allowing role propagation before retry $($attempt + 1)/6. $($_.Exception.Message)"
+                Start-Sleep -Seconds 60
+            }
         }
     }
     $report.Resources = @($resources | ForEach-Object { @{ Id = $_.id; Type = $_.type; Name = $_.name } })
     $report.Outputs = @{}
     foreach ($key in $Outputs.Keys) { $report.Outputs[$key] = $Outputs[$key].value }
-    $report.ReadyForDataIngestion = $true
 }
 
 $account = Invoke-FoundationAzure -Arguments @('account', 'show')
@@ -264,10 +276,13 @@ try
                     if ($previous[$key] -ne $report.Outputs[$key]) { throw "Redeployment changed the foundation identity '$key'." }
                 }
             }
-            $report.Passes += @{ Pass = $pass; VerifiedAt = [DateTimeOffset]::UtcNow.ToString('o'); Outputs = $report.Outputs }
+            $report.Passes += @{
+                Pass = $pass; VerifiedAt = [DateTimeOffset]::UtcNow.ToString('o'); Outputs = $report.Outputs
+                Verification = if ($DeferDataPlaneVerification) { 'ControlPlaneOnly' } else { 'ControlAndDataPlane' }
+            }
             Save-FoundationReport
         }
-        $report.Status = 'VerifiedAndRetained'
+        $report.Status = if ($DeferDataPlaneVerification) { 'DeployedAwaitingDataPlaneVerification' } else { 'VerifiedAndRetained' }
     }
     else
     {
