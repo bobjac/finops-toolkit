@@ -6,7 +6,7 @@ H02 uses the existing FinOps hub build, not a second implementation of its infra
 
 The owned resource group is `ftk-dto-hack-foundation`, derived from `resourceGroupPrefix` in `sandbox.config.json`. Hub and cluster names include a deterministic subscription-and-group hash. The existing smoke-test group is separate.
 
-The foundation includes the canonical hub's storage, Data Factory, Key Vault, managed identities, deployment scripts, and development-tier Azure Data Explorer with `Hub` and `Ingestion` databases. Managed exports and recommendations are disabled, and no monitored billing scopes are configured. The workflow receives Blob Data Contributor on the hub storage account. Azure Data Explorer automatically grants its database creator Admin; verification requires a matching workflow application assignment in each database rather than creating duplicate assignments.
+The foundation includes the canonical hub's storage, Data Factory, managed identities, deployment scripts, Event Grid topic, and development-tier Azure Data Explorer with `Hub` and `Ingestion` databases. This fixture-first configuration does not create a Key Vault. Managed exports and recommendations are disabled, and no monitored billing scopes are configured. The workflow receives Blob Data Contributor on the hub storage account. Azure Data Explorer automatically grants its database creator Admin; verification requires a matching workflow application assignment in each database rather than creating duplicate assignments.
 
 **Successful resources are retained and incur charges.** Data Explorer auto-stop is disabled by the canonical template. The USD 300 declaration is not a billing cap. The configured expiration is tagged, not automatically enforced by this workflow. H11 adds the scheduled cleanup backstop; remove unused resources manually until then.
 
@@ -51,3 +51,32 @@ For an offline plan, set the expected nonsecret `AZURE_SUBSCRIPTION_ID` and `AZU
 `-WhatIf` makes no Azure calls and therefore does not prove ownership or access.
 
 Before any writes, an existing group must have matching ownership tags; it is never adopted. If deployment fails, evidence is retained. The workflow automatically removes only a foundation first created by that run. It preserves any previously retained foundation after a failed redeployment; inspect the failure and explicitly remove it when appropriate. Cleanup failure fails its step and is recorded separately rather than reported as success.
+
+## Verified sandbox deployment
+
+[Workflow run 42098068765](https://github.com/bobjac/finops-toolkit/actions/runs/42098068765) passed on November 5, 2026, from fork revision `fca1552250ddc4b2a0abd8d722bc968cd08fe9a4`. The run took about 42 minutes overall: the first deployment pass took about 32 minutes, and redeployment took about eight minutes. These are observed timings, not a completion guarantee.
+
+| Validation | Result |
+| --- | --- |
+| Pester: `DesignTimeOptimizerSandbox.Tests.ps1` and `DesignTimeOptimizerFoundation.Tests.ps1` | 35 passed, zero failed or skipped |
+| PSScriptAnalyzer: foundation lifecycle and sandbox preflight scripts | No warnings or errors |
+| `./src/scripts/Build-Toolkit.ps1 -Template finops-hub` | Passed |
+| `bicep build ./release/finops-hub/main.bicep --outfile ./release/finops-hub/azuredeploy.json` | Passed |
+| `bicep build ./hack/foundation.bicep --outfile ./release/hack-foundation.json` | Passed |
+| Two deployment passes | Passed; storage, cluster, factory, and database identities unchanged |
+| Final workflow-identity data-plane verification after refreshed sign-in | Passed; `ReadyForDataIngestion=true` |
+| Failure cleanup in earlier runs | Newly created groups removed; absence independently verified |
+
+The retained resources are in `eastus2`:
+
+| Resource | Name |
+| --- | --- |
+| Resource group | `ftk-dto-hack-foundation` |
+| Data Explorer cluster | `dtoa70ffd577ce4` |
+| Databases | `Hub`, `Ingestion` |
+| Storage account | `dtoa70ffd573365tbne7qfzy` |
+| Data Factory | `dtoa70ffd577ce4-engine-3365tbne7qfzy` |
+
+The cluster query endpoint is `https://dtoa70ffd577ce4.eastus2.kusto.windows.net`. Ownership, source, and expiration tags were verified. The tagged expiration is February 2, 2027, at 04:00 UTC, equivalent to the configured February 1 at 23:00 UTC-05:00. Resources remain running and billable; no automatic expiration shutdown or enforced spending cap is installed. Use the confirmed Remove command above when the foundation is no longer needed.
+
+Storage reads and database function queries were exercised, but storage writes were checked only through RBAC. Fixture upload, actual ingestion, sample/model deployment, and workbook validation are not completed by this result.
