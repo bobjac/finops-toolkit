@@ -181,6 +181,28 @@ Describe 'Design-time optimizer sandbox preflight' {
         Get-Content $script:ReportPath -Raw | Should -Not -Match 'private-diagnostic-value'
     }
 
+    It 'Rejects nonstable model versions even when their quota is available' -ForEach @(
+        @{ Lifecycle = 'Legacy' }
+        @{ Lifecycle = 'Deprecating' }
+    ) {
+        $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
+        $script:Azure.Models[0].model.lifecycleStatus = $Lifecycle
+        { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Model capacity*'
+        $report = Get-Content $script:ReportPath -Raw | ConvertFrom-Json
+        ($report.Checks | Where-Object Name -EQ 'Model capacity').Evidence.ModelsObserved[0].Lifecycle | Should -Be $Lifecycle
+    }
+
+    It 'Does not use fine-tuned model quota to approve a base model deployment' {
+        $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
+        $script:Azure.Usage[0].limit = 0
+        $script:Azure.Models[0].model.skus += @{
+            name = 'GlobalStandard'; usageName = 'discovered-usage-name-finetune'
+            capacity = @{ minimum = 1; maximum = 100; step = 1 }
+        }
+        $script:Azure.Usage += @{ name = @{ value = 'discovered-usage-name-finetune' }; limit = 100; currentValue = 0 }
+        { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Model capacity*'
+    }
+
     It 'Rejects restricted SKUs and untrusted pagination links' -ForEach @(
         @{ SkuResponse = @{ value = @(@{ name = 'Dev(No SLA)_Standard_E2a_v4'; restrictions = @('restricted') }) } }
         @{ SkuResponse = @{ value = @(); nextLink = 'https://untrusted.example/skus' } }

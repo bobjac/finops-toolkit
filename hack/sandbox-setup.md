@@ -19,9 +19,11 @@ Use the **Sandbox connection test** workflow in `bobjac/finops-toolkit` with **m
 | Model candidates | `gpt-4.1-mini`, then `gpt-4o-mini`, with `GlobalStandard` and at least one capacity unit; provisional preferences, not a deployed or cost-validated selection |
 | Experiment defaults | Maximum lifetime 90 minutes; at most two parallel variants |
 
-Model capacity units are service-specific, not requests per second. Preflight discovers each model/SKU's `usageName` and maps it to the regional usage response. Unknown, exhausted, or unmatched limits fail. It tries Azure Quota CLI first; only an explicitly unsupported provider permits the documented Cognitive Services usage check instead. Other CLI failures remain blockers.
+Model capacity units are service-specific, not requests per second. Preflight discovers each model/SKU's `usageName` and maps it to the regional usage response. Fine-tuned model quota cannot approve a base model deployment. Unknown, exhausted, or unmatched limits fail. It tries Azure Quota CLI first; only an explicitly unsupported provider permits the documented Cognitive Services usage check instead. Other CLI failures remain blockers.
 
 The report lists stable model versions with sufficient quota. H05 must pin the selected name, version, SKU, and capacity after checking current token prices and workload requirements. Baseline and candidate can share this sandbox-owned model, but must have separate telemetry labels.
+
+Versions marked `Legacy` or `Deprecating` fail the conservative model gate even if they have quota and a future retirement date. The failure report includes lifecycle and quota observations so an administrator can distinguish outdated model preferences from insufficient quota. Select a current stable model before deployment; do not silently relax the gate.
 
 ## One-time administrator setup
 

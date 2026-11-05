@@ -264,7 +264,7 @@ if (-not $ConfigurationOnly)
                 $model = $entry.model
                 if ($entry.kind -ne 'OpenAI' -or $model.name -notin $config.model.preferredNames -or -not $model.version -or $model.lifecycleStatus -notin @('Stable', 'GenerallyAvailable')) { continue }
                 if ($model.deprecation.inference -and [DateTimeOffset]::Parse($model.deprecation.inference) -le $expiration) { continue }
-                foreach ($sku in @($model.skus | Where-Object { $_.name -eq $config.model.deploymentSku }))
+                foreach ($sku in @($model.skus | Where-Object { $_.name -eq $config.model.deploymentSku -and $_.usageName -notmatch '[.-]finetune$' }))
                 {
                     if ($sku.deprecationDate -and [DateTimeOffset]::Parse($sku.deprecationDate) -le $expiration) { continue }
                     $capacity = [Math]::Max($config.model.minimumCapacity, $sku.capacity.minimum)
