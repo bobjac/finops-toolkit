@@ -54,7 +54,7 @@ Describe 'Design-time optimizer sandbox preflight' {
         $script:Azure.Models = @(@{
                 kind = 'OpenAI'
                 model = @{
-                    name = 'gpt-4.1-mini'; version = 'test-version'; lifecycleStatus = 'GenerallyAvailable'
+                    name = $script:Config.model.preferredNames[0]; version = 'test-version'; lifecycleStatus = 'GenerallyAvailable'
                     skus = @(@{
                             name = 'GlobalStandard'; usageName = 'discovered-usage-name'
                             capacity = @{ minimum = 1; maximum = 100; step = 1 }

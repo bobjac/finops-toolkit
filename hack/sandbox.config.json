@@ -13,8 +13,7 @@
   "model": {
     "ownership": "sandbox",
     "preferredNames": [
-      "gpt-4.1-mini",
-      "gpt-4o-mini"
+      "gpt-5-mini"
     ],
     "deploymentSku": "GlobalStandard",
     "minimumCapacity": 1

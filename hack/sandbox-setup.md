@@ -16,12 +16,14 @@ Use the **Sandbox connection test** workflow in `bobjac/finops-toolkit` with **m
 | Sample repository | `bobjac/finops-toolkit-sample-workload`; H01 does not create it |
 | Data Explorer | Development tier, `Dev(No SLA)_Standard_E2a_v4`; an unavailable or restricted SKU blocks deployment |
 | Model ownership | A new sandbox-owned deployment; no external model endpoint or shared production resources |
-| Model candidates | `gpt-4.1-mini`, then `gpt-4o-mini`, with `GlobalStandard` and at least one capacity unit; provisional preferences, not a deployed or cost-validated selection |
+| Preferred model | `gpt-5-mini`, with `GlobalStandard` and at least one capacity unit; not yet deployed or cost-validated |
 | Experiment defaults | Maximum lifetime 90 minutes; at most two parallel variants |
 
 Model capacity units are service-specific, not requests per second. Preflight discovers each model/SKU's `usageName` and maps it to the regional usage response. Fine-tuned model quota cannot approve a base model deployment. Unknown, exhausted, or unmatched limits fail. It tries Azure Quota CLI first; only an explicitly unsupported provider permits the documented Cognitive Services usage check instead. Other CLI failures remain blockers.
 
 The report lists stable model versions with sufficient quota. H05 must pin the selected name, version, SKU, and capacity after checking current token prices and workload requirements. Baseline and candidate can share this sandbox-owned model, but must have separate telemetry labels.
+
+The sandbox administrator approved GPT-5 mini after the regional catalog reported version `2025-08-07` as generally available, with retirement on July 13, 2027, and available `GlobalStandard` quota. These are discovery observations, not a capacity reservation or a pinned deployment. Preflight must recheck them before deployment.
 
 Versions marked `Legacy` or `Deprecating` fail the conservative model gate even if they have quota and a future retirement date. The failure report includes lifecycle and quota observations so an administrator can distinguish outdated model preferences from insufficient quota. Select a current stable model before deployment; do not silently relax the gate.
 
@@ -32,6 +34,8 @@ Versions marked `Legacy` or `Deprecating` fail the conservative model gate even 
 3. Give the deployment identity the required resource management actions and permission to assign scoped roles. Contributor alone does **not** grant `Microsoft.Authorization/roleAssignments/write`. An administrator can grant Contributor plus appropriately scoped Role Based Access Control Administrator, or a narrower equivalent. Role-assignment conditions must permit the specific downstream identities and roles.
 4. Register the providers named in the preflight report. The script only reports missing registrations; it does not change subscription settings. Review regional model access, quota, Azure Policy, and deny assignments with the subscription administrator.
 5. After H02/H05 deploy resources and managed identities, grant the workflow the intended storage data access and Data Explorer database access. Grant the application identity model invocation access on the sandbox model resource, such as Cognitive Services OpenAI User. Wait for role propagation, then verify access. Deployment role grants are not proof of data-plane access.
+
+For this temporary sandbox, the administrator explicitly approved unconditioned Role Based Access Control Administrator for the verified `finops-toolkit-sandbox-github` identity, scoped only to the sandbox subscription, alongside its existing Contributor role. This permits managing role assignments, including privileged roles; do not copy this unrestricted grant to a production subscription. Conditional delegation is the recommended alternative outside this approved temporary setup.
 
 All planned resources are owned by this sandbox. The subscription, tenant, Entra deployment application, and GitHub environment are administrator-managed prerequisites. No paid shared external resources are assumed. Changing this boundary requires an explicit configuration/design decision.
 
