@@ -6,12 +6,6 @@ targetScope = 'resourceGroup'
 @description('Deployed hub storage account name.')
 param storageAccountName string
 
-@description('Deployed Data Explorer cluster name.')
-param clusterName string
-
-@description('Application ID of the signed-in workflow identity.')
-param workflowClientId string
-
 @description('Object ID of the signed-in workflow identity.')
 param workflowObjectId string
 
@@ -28,17 +22,3 @@ resource storageAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalType: 'ServicePrincipal'
   }
 }
-
-resource cluster 'Microsoft.Kusto/clusters@2025-02-14' existing = {
-  name: clusterName
-}
-
-resource databaseAccess 'Microsoft.Kusto/clusters/databases/principalAssignments@2025-02-14' = [for database in ['Hub', 'Ingestion']: {
-  name: '${clusterName}/${database}/${guid(cluster.id, database, workflowClientId)}'
-  properties: {
-    principalId: workflowClientId
-    principalType: 'App'
-    role: 'Admin'
-    tenantId: tenant().tenantId
-  }
-}]

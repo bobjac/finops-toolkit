@@ -21,9 +21,6 @@ param clusterSku string
 @description('Ownership, source revision, and expiration tags.')
 param tags object
 
-@description('Application ID of the signed-in workflow identity.')
-param workflowClientId string
-
 module hub '../release/finops-hub/main.bicep' = {
   name: 'hack-foundation-hub'
   params: {
@@ -44,8 +41,6 @@ module access 'foundation-access.bicep' = {
   name: 'hack-foundation-access'
   params: {
     storageAccountName: hub.outputs.storageAccountName
-    clusterName: clusterName
-    workflowClientId: workflowClientId
     workflowObjectId: deployer().objectId
   }
 }
@@ -57,3 +52,6 @@ output clusterUri string = hub.outputs.clusterUri
 output hubDbName string = hub.outputs.hubDbName
 output ingestionDbName string = hub.outputs.ingestionDbName
 output dataFactoryName string = hub.outputs.dataFactoryName
+
+@description('Object ID used to verify the database creator grants.')
+output workflowObjectId string = deployer().objectId

@@ -45,7 +45,7 @@ Describe 'Owned sandbox foundation lifecycle' {
         $tags['ftk-source'] = 'initial-revision'
         $script:State = @{
             Calls = [Collections.Generic.List[string]]::new()
-            Exists = $true; DeleteFails = $false; DeployFails = $false
+            Exists = $true; DeleteFails = $false; DeployFails = $false; MissingAdmin = $false
             Group = @{ id = $script:Plan.ResourceGroupId; location = $script:Config.region; tags = $tags }
             Account = @{
                 id = $env:AZURE_SUBSCRIPTION_ID; tenantId = $env:AZURE_TENANT_ID; state = 'Enabled'
@@ -89,6 +89,12 @@ Describe 'Owned sandbox foundation lifecycle' {
                 $response = @(@{ id = $state.Outputs.clusterId.value; type = 'Microsoft.Kusto/clusters'; name = 'testcluster'; tags = $state.Group.tags })
             }
             elseif ($call -match '/databases/(Hub|Ingestion)\?') { $response = @{ properties = @{ provisioningState = 'Succeeded' } } }
+            elseif ($call -match '/databases/(Hub|Ingestion)/principalAssignments\?') {
+                $response = @{ value = @() }
+                if (-not $state.MissingAdmin) {
+                    $response.value = @(@{ properties = @{ principalType = 'App'; role = 'Admin'; tenantId = $env:AZURE_TENANT_ID; principalId = $env:AZURE_CLIENT_ID } })
+                }
+            }
             elseif ($call -like 'provider list*') {
                 $response = @('Storage', 'DataFactory', 'KeyVault', 'EventGrid', 'CostManagementExports', 'Kusto', 'Network', 'ContainerInstance', 'Quota', 'ManagedIdentity', 'OperationalInsights', 'Insights', 'App', 'ContainerRegistry', 'CognitiveServices', 'LoadTestService') |
                     ForEach-Object { @{ namespace = "Microsoft.$_"; registrationState = 'Registered' } }
@@ -163,6 +169,12 @@ Describe 'Owned sandbox foundation lifecycle' {
         $result.Passes.Count | Should -Be 2
         @($script:State.Calls | Where-Object { $_ -like 'deployment group create*' }).Count | Should -Be 2
         @($script:State.Calls | Where-Object { $_ -like 'group delete*' }).Count | Should -Be 0
+    }
+
+    It 'Rejects missing database administration access rather than assuming creator grants' {
+        $script:State.MissingAdmin = $true
+        { & $script:Lifecycle -Path $script:ConfigPath -OutputDirectory $script:Output } | Should -Throw '*no verified Admin assignment*'
+        (Get-Content (Join-Path $script:Output 'foundation.json') -Raw | ConvertFrom-Json).ReadyForDataIngestion | Should -BeFalse
     }
 
     It 'Preserves a previously retained foundation when redeployment fails' {

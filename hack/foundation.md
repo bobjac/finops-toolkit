@@ -6,7 +6,7 @@ H02 uses the existing FinOps hub build, not a second implementation of its infra
 
 The owned resource group is `ftk-dto-hack-foundation`, derived from `resourceGroupPrefix` in `sandbox.config.json`. Hub and cluster names include a deterministic subscription-and-group hash. The existing smoke-test group is separate.
 
-The foundation includes the canonical hub's storage, Data Factory, Key Vault, managed identities, deployment scripts, and development-tier Azure Data Explorer with `Hub` and `Ingestion` databases. Managed exports and recommendations are disabled, and no monitored billing scopes are configured. The workflow receives Blob Data Contributor on the hub storage account and database administrator access to these two sandbox databases.
+The foundation includes the canonical hub's storage, Data Factory, Key Vault, managed identities, deployment scripts, and development-tier Azure Data Explorer with `Hub` and `Ingestion` databases. Managed exports and recommendations are disabled, and no monitored billing scopes are configured. The workflow receives Blob Data Contributor on the hub storage account. Azure Data Explorer automatically grants its database creator Admin; verification requires a matching workflow application assignment in each database rather than creating duplicate assignments.
 
 **Successful resources are retained and incur charges.** Data Explorer auto-stop is disabled by the canonical template. The USD 300 declaration is not a billing cap. The configured expiration is tagged, not automatically enforced by this workflow. H11 adds the scheduled cleanup backstop; remove unused resources manually until then.
 

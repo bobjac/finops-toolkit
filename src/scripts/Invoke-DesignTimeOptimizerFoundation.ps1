@@ -155,6 +155,14 @@ function Test-FoundationDeployment
     {
         $databaseResource = Invoke-FoundationAzure -Arguments @('rest', '--method', 'get', '--url', "https://management.azure.com$($Outputs.clusterId.value)/databases/${database}?api-version=2025-02-14")
         if ($databaseResource.properties.provisioningState -ne 'Succeeded') { throw "Database '$database' is not successfully provisioned." }
+        # ADX grants its database creator Admin automatically; a second ARM assignment conflicts.
+        $assignments = Invoke-FoundationAzure -Arguments @('rest', '--method', 'get', '--url', "https://management.azure.com$($Outputs.clusterId.value)/databases/$database/principalAssignments?api-version=2025-02-14")
+        $admins = @($assignments.value | Where-Object {
+                $_.properties.principalId -and $_.properties.principalType -eq 'App' -and $_.properties.role -eq 'Admin' -and
+                $_.properties.tenantId -eq $env:AZURE_TENANT_ID -and
+                $_.properties.principalId -in @($env:AZURE_CLIENT_ID, $Outputs.workflowObjectId.value)
+            })
+        if (-not $admins.Count) { throw "The workflow identity has no verified Admin assignment on database '$database'." }
     }
     $resolved = $config.Clone()
     $resolved.dataPlane = @{
@@ -237,7 +245,7 @@ try
         $parameters = @{
             hubName = @{ value = "dto$hash" }; clusterName = @{ value = "dto$hash" }
             location = @{ value = $config.region }; clusterSku = @{ value = $config.dataExplorerSku }
-            tags = @{ value = $tags }; workflowClientId = @{ value = $env:AZURE_CLIENT_ID }
+            tags = @{ value = $tags }
         }
         $parameterPath = Join-Path $OutputDirectory 'foundation.parameters.json'
         @{ parameters = $parameters } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $parameterPath
