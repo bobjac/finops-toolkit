@@ -52,4 +52,31 @@ if (Test-Path $finopsSkill)
     }
 }
 
+$optimizerSkill = Join-Path $skillsDir 'design-time-optimizer'
+if (Test-Path $optimizerSkill)
+{
+    $optimizerReferences = Join-Path $optimizerSkill 'references'
+    Remove-PluginBundle $optimizerReferences
+    New-Item $optimizerReferences -ItemType Directory -Force | Out-Null
+
+    Copy-Item `
+        (Join-Path $repoRoot 'src/design-time-optimizer/schemas/experiment.schema.json') `
+        -Destination (Join-Path $optimizerReferences 'experiment.schema.json') `
+        -Force
+
+    Copy-Item `
+        (Join-Path $repoRoot 'src/design-time-optimizer/examples/sample-api-rightsize.experiment.json') `
+        -Destination (Join-Path $optimizerReferences 'sample-api-rightsize.experiment.json') `
+        -Force
+
+    $optimizerScripts = Join-Path $optimizerSkill 'scripts'
+    Remove-PluginBundle $optimizerScripts
+    New-Item $optimizerScripts -ItemType Directory -Force | Out-Null
+
+    Copy-Item `
+        (Join-Path $repoRoot 'src/scripts/Test-DesignTimeOptimizerExperiment.ps1') `
+        -Destination $optimizerScripts `
+        -Force
+}
+
 Get-ChildItem $DestDir -Force -Recurse -Filter '.DS_Store' | Remove-Item -Force
