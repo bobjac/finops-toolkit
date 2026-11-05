@@ -6,8 +6,16 @@ name: Sandbox connection test
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Create the smoke-test group, or run read-only hack preflight
+        required: true
+        default: smoke-test
+        type: choice
+        options:
+          - smoke-test
+          - preflight
       location:
-        description: Azure region for the resource group
+        description: Azure region for the smoke-test group (preflight uses hack/sandbox.config.json)
         required: true
         default: eastus2
         type: string
@@ -22,9 +30,10 @@ concurrency:
 
 jobs:
   create-resource-group:
-    name: Create and verify resource group
+    name: Sandbox connection or read-only preflight
+    if: github.repository == 'bobjac/finops-toolkit'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     environment: sandbox
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -33,6 +42,28 @@ jobs:
       RESOURCE_GROUP: rg-ftk-sandbox-smoke
       LOCATION: ${{ inputs.location }}
     steps:
+      - name: Check out the selected revision
+        if: inputs.mode == 'preflight'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install test modules
+        if: inputs.mode == 'preflight'
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Repository PSGallery -Force
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Repository PSGallery -Force
+
+      - name: Test sandbox preflight
+        if: inputs.mode == 'preflight'
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 6.0.0
+          $result = Invoke-Pester -Path ./src/powershell/Tests/Unit/DesignTimeOptimizerSandbox.Tests.ps1 -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed') { throw 'Sandbox preflight unit tests failed.' }
+          $issues = @(Invoke-ScriptAnalyzer -Path ./src/scripts/Test-DesignTimeOptimizerSandbox.ps1 -Severity Warning,Error)
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Sandbox preflight lint failed.' }
+          ./src/scripts/Test-DesignTimeOptimizerSandbox.ps1 -ConfigurationOnly
+
       - name: Check configuration
         shell: bash
         run: |
@@ -52,6 +83,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Create and verify resource group
+        if: inputs.mode != 'preflight'
         shell: bash
         run: |
           set -euo pipefail
@@ -82,3 +114,45 @@ jobs:
             echo "Created or updated resource group: \`$RESOURCE_GROUP\`."
             echo "No billable resources were deployed. The resource group is retained for inspection."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Azure quota CLI extension
+        if: inputs.mode == 'preflight'
+        shell: bash
+        run: az extension add --name quota --only-show-errors
+
+      - name: Run read-only sandbox preflight
+        if: inputs.mode == 'preflight'
+        shell: pwsh
+        run: |
+          ./src/scripts/Test-DesignTimeOptimizerSandbox.ps1 -ReportPath "$env:RUNNER_TEMP/sandbox-preflight.json"
+
+      - name: Summarize read-only checks
+        if: always() && inputs.mode == 'preflight'
+        shell: pwsh
+        run: |
+          $path = "$env:RUNNER_TEMP/sandbox-preflight.json"
+          if (-not (Test-Path $path)) {
+            'Preflight stopped before an Azure evidence report was produced. Review the failing test, configuration, or sign-in step.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          $report = Get-Content $path -Raw | ConvertFrom-Json
+          @(
+            '### Read-only sandbox preflight'
+            "Revision: $env:GITHUB_SHA"
+            "Infrastructure prerequisites passed: $($report.ReadyForInfrastructureDeployment)"
+            "Ready for data ingestion: $($report.ReadyForDataIngestion)"
+            ''
+            '| Check | Result |'
+            '| --- | --- |'
+          ) >> $env:GITHUB_STEP_SUMMARY
+          $report.Checks | ForEach-Object { "| $($_.Name) | $($_.Status) |" } >> $env:GITHUB_STEP_SUMMARY
+          'No resource creation, registration, role grants, or model calls were performed in preflight mode. See the artifact for blockers and deferred checks.' >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload nonsecret preflight evidence
+        if: always() && inputs.mode == 'preflight'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sandbox-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/sandbox-preflight.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Design-time optimizer sandbox configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "region",
+    "resourceGroupPrefix",
+    "expiresOn",
+    "budget",
+    "sampleRepository",
+    "dataExplorerSku",
+    "model",
+    "experiments",
+    "dataPlane"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "region": { "type": "string", "pattern": "^[a-z][a-z0-9]+$" },
+    "resourceGroupPrefix": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,39}$" },
+    "expiresOn": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "maximumSpend"],
+      "properties": {
+        "currency": { "const": "USD" },
+        "maximumSpend": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "sampleRepository": { "type": "string", "pattern": "^bobjac/[a-zA-Z0-9_.-]+$" },
+    "dataExplorerSku": {
+      "enum": ["Dev(No SLA)_Standard_E2a_v4", "Dev(No SLA)_Standard_D11_v2"]
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownership", "preferredNames", "deploymentSku", "minimumCapacity"],
+      "properties": {
+        "ownership": { "const": "sandbox" },
+        "preferredNames": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-zA-Z0-9_.-]+$" }
+        },
+        "deploymentSku": { "enum": ["GlobalStandard", "Standard"] },
+        "minimumCapacity": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "experiments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximumLifetimeMinutes", "maximumParallelVariants"],
+      "properties": {
+        "maximumLifetimeMinutes": { "type": "integer", "minimum": 15, "maximum": 1440 },
+        "maximumParallelVariants": { "type": "integer", "minimum": 1, "maximum": 2 }
+      }
+    },
+    "dataPlane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storageAccountResourceId", "dataExplorerResourceId", "database"],
+      "properties": {
+        "storageAccountResourceId": { "type": "string" },
+        "dataExplorerResourceId": { "type": "string" },
+        "database": { "enum": ["Hub"] }
+      }
+    }
+  }
+}

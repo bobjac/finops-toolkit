@@ -1,0 +1,31 @@
+{
+  "$schema": "../src/design-time-optimizer/schemas/sandbox.schema.json",
+  "version": 1,
+  "region": "eastus2",
+  "resourceGroupPrefix": "ftk-dto-hack",
+  "expiresOn": "2027-02-01T23:00:00-05:00",
+  "budget": {
+    "currency": "USD",
+    "maximumSpend": 300
+  },
+  "sampleRepository": "bobjac/finops-toolkit-sample-workload",
+  "dataExplorerSku": "Dev(No SLA)_Standard_E2a_v4",
+  "model": {
+    "ownership": "sandbox",
+    "preferredNames": [
+      "gpt-4.1-mini",
+      "gpt-4o-mini"
+    ],
+    "deploymentSku": "GlobalStandard",
+    "minimumCapacity": 1
+  },
+  "experiments": {
+    "maximumLifetimeMinutes": 90,
+    "maximumParallelVariants": 2
+  },
+  "dataPlane": {
+    "storageAccountResourceId": "",
+    "dataExplorerResourceId": "",
+    "database": "Hub"
+  }
+}
