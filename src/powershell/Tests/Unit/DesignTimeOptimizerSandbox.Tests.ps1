@@ -165,6 +165,10 @@ Describe 'Design-time optimizer sandbox preflight' {
         $script:Azure.Usage[0].limit = $Limit
         $script:Azure.Usage[0].currentValue = $Current
         { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Model capacity*'
+        $report = Get-Content $script:ReportPath -Raw | ConvertFrom-Json
+        $evidence = ($report.Checks | Where-Object Name -EQ 'Model capacity').Evidence
+        $evidence.ModelsObserved[0].Skus[0].Usage[0].Limit | Should -Be $Limit
+        $evidence.ModelsObserved[0].Skus[0].Usage[0].CurrentValue | Should -Be $Current
     }
 
     It 'Uses service-specific quota only for an explicitly unsupported generic provider' {

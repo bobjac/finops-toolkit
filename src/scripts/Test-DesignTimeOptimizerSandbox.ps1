@@ -155,7 +155,9 @@ function Invoke-SandboxCheck
     }
     catch
     {
-        $checks.Add(@{ Name = $Name; Status = 'Failed'; Detail = $_.Exception.Message })
+        $check = @{ Name = $Name; Status = 'Failed'; Detail = $_.Exception.Message }
+        if ($_.Exception.Data['Evidence']) { $check.Evidence = $_.Exception.Data['Evidence'] }
+        $checks.Add($check)
         Write-Warning "$Name failed: $($_.Exception.Message)"
     }
 }
@@ -235,6 +237,27 @@ if (-not $ConfigurationOnly)
         }
         $models = @(Invoke-SandboxAzureRead -Operation 'Model availability' -Arguments @('cognitiveservices', 'model', 'list', '--location', $config.region, '--subscription', $subscription))
         $usage = @(Invoke-SandboxAzureRead -Operation 'Model usage' -Arguments @('cognitiveservices', 'usage', 'list', '--location', $config.region, '--subscription', $subscription))
+        $observed = @(
+            foreach ($entry in $models)
+            {
+                if ($entry.model.name -notin $config.model.preferredNames) { continue }
+                @{
+                    Model = $entry.model.name; Version = $entry.model.version; Kind = $entry.kind
+                    Lifecycle = $entry.model.lifecycleStatus; InferenceRetirement = $entry.model.deprecation.inference
+                    Skus = @(
+                        foreach ($sku in $entry.model.skus)
+                        {
+                            @{
+                                Sku = $sku.name; QuotaName = $sku.usageName; Capacity = $sku.capacity
+                                Usage = @($usage | Where-Object { $_.name.value -eq $sku.usageName } | ForEach-Object {
+                                        @{ Limit = $_.limit; CurrentValue = $_.currentValue; Status = $_.status }
+                                    })
+                            }
+                        }
+                    )
+                }
+            }
+        )
         $candidates = @(
             foreach ($entry in $models)
             {
@@ -256,7 +279,12 @@ if (-not $ConfigurationOnly)
                 }
             }
         )
-        if (-not $candidates.Count) { throw 'No approved stable model/SKU has a verified quota match and sufficient capacity. Review provider access, preferred models, region, and quota with an administrator.' }
+        if (-not $candidates.Count)
+        {
+            $exception = [InvalidOperationException]::new('No approved stable model/SKU has a verified quota match and sufficient capacity. Review the observed versions, lifecycle, SKU limits, and quota evidence with an administrator.')
+            $exception.Data['Evidence'] = @{ Source = $quotaSource; PreferredModels = $config.model.preferredNames; ModelsObserved = $observed }
+            throw $exception
+        }
         @{ Source = $quotaSource; Candidates = $candidates; Limitation = 'Candidates are not deployed or priced; runtime identity access and performance must be verified after deployment.' }
     }
 
