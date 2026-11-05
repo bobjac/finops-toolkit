@@ -1,0 +1,112 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## \ud83e\udd16 FinOps \u2014 AI Agent Tokenomics\nAgent-level token cost from **gen_ai** OpenTelemetry traces (Microsoft Foundry / Agent Framework). This is the granularity the AI Foundry Grafana dashboard **cannot** produce \u2014 Cognitive Services platform metrics have no agent or session dimension. Pricing uses an editable rate card (gpt-5 family list prices); swap for the FinOps Hub `Costs()` price sheet for authoritative numbers."
+      },
+      "name": "title"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let rc = datatable(Model:string, InPer1M:real, CachePer1M:real, OutPer1M:real)\n[\"gpt-5\",1.25,0.125,10.0,\"gpt-5-mini\",0.25,0.025,2.0,\"gpt-5-nano\",0.05,0.005,0.4];\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| lookup kind=leftouter rc on Model\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize ['Total cost ($)']=round(sum(Cost),4),\n        ['Input tokens']=sum(InTok), ['Output tokens']=sum(OutTok),\n        Agents=dcount(AgentId), Sessions=dcount(SessionId), Calls=count()",
+        "size": 0,
+        "title": "Summary",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+        ],
+        "visualization": "table"
+      },
+      "name": "kpis"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let rc = datatable(Model:string, InPer1M:real, CachePer1M:real, OutPer1M:real)\n[\"gpt-5\",1.25,0.125,10.0,\"gpt-5-mini\",0.25,0.025,2.0,\"gpt-5-nano\",0.05,0.005,0.4];\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| lookup kind=leftouter rc on Model\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Cost=round(sum(Cost),5) by AgentName\n| order by Cost desc",
+        "size": 0,
+        "title": "Effective cost by agent ($)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+        ],
+        "visualization": "barchart"
+      },
+      "name": "cost-by-agent"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let rc = datatable(Model:string, InPer1M:real, CachePer1M:real, OutPer1M:real)\n[\"gpt-5\",1.25,0.125,10.0,\"gpt-5-mini\",0.25,0.025,2.0,\"gpt-5-nano\",0.05,0.005,0.4];\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| lookup kind=leftouter rc on Model\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Cost=round(sum(Cost),5) by CostCenter\n| order by Cost desc",
+        "size": 0,
+        "title": "Cost by cost center",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+        ],
+        "visualization": "piechart"
+      },
+      "name": "cost-by-cc"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let rc = datatable(Model:string, InPer1M:real, CachePer1M:real, OutPer1M:real)\n[\"gpt-5\",1.25,0.125,10.0,\"gpt-5-mini\",0.25,0.025,2.0,\"gpt-5-nano\",0.05,0.005,0.4];\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| lookup kind=leftouter rc on Model\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize ['Input tokens']=sum(InTok), ['Output tokens']=sum(OutTok) by Model\n| order by ['Output tokens'] desc",
+        "size": 0,
+        "title": "Tokens by model (input vs output)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+        ],
+        "visualization": "barchart"
+      },
+      "name": "tokens-by-model"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let rc = datatable(Model:string, InPer1M:real, CachePer1M:real, OutPer1M:real)\n[\"gpt-5\",1.25,0.125,10.0,\"gpt-5-mini\",0.25,0.025,2.0,\"gpt-5-nano\",0.05,0.005,0.4];\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| lookup kind=leftouter rc on Model\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Cost=round(sum(Cost),6) by bin(timestamp, 2m), AgentName\n| order by timestamp asc",
+        "size": 0,
+        "title": "Cost over time by agent",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "cost-time"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let rc = datatable(Model:string, InPer1M:real, CachePer1M:real, OutPer1M:real)\n[\"gpt-5\",1.25,0.125,10.0,\"gpt-5-mini\",0.25,0.025,2.0,\"gpt-5-nano\",0.05,0.005,0.4];\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| lookup kind=leftouter rc on Model\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Calls=count(), Sessions=dcount(SessionId),\n        InputTokens=sum(InTok), CachedTokens=sum(Cached), OutputTokens=sum(OutTok),\n        ['Cost ($)']=round(sum(Cost),5)\n    by AgentName, Model, Team, CostCenter\n| order by ['Cost ($)'] desc",
+        "size": 0,
+        "title": "Agent x model x cost center breakdown",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": [
+          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+        ],
+        "visualization": "table"
+      },
+      "name": "breakdown"
+    }
+  ],
+  "isLocked": false,
+  "fallbackResourceIds": [
+    "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
+  ]
+}

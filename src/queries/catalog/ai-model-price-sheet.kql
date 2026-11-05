@@ -1,0 +1,136 @@
+// ============================================================================
+// Query: AI model price sheet (Microsoft Foundry + Marketplace Claude)
+// Description:
+//   Returns current unit prices for AI model meters from the FOCUS price sheet,
+//   covering Microsoft Foundry models and Marketplace Claude (CCU and legacy
+//   per-model meters). Unrelated Azure Databricks Anthropic DBU meters are
+//   excluded. Token meters are normalized to price per 1M tokens and Claude CCU
+//   meters to price per CCU.
+// Author: FinOps Toolkit Team
+// Parameters:
+//   asOf:         Point in time to evaluate prices (default: now())
+//   modelSearch:  Optional model filter, e.g. 'gpt-5', 'claude', 'sonnet' (default: '')
+//   regionSearch: Optional region filter, e.g. 'US East 2' (default: '')
+//   offerId:      Optional offer ID filter, e.g. 'MS-AZR-0017P' (default: '')
+// Output:
+//   One row per matching price meter with normalized token/CCU pricing and SKU metadata.
+// Usage:
+//   Use this query to look up current AI model list/contracted/effective prices for
+//   benchmarking agent workload costs. Leave all filters empty for the complete sheet.
+// Last Updated: 2026-09-16
+// ============================================================================
+
+let asOf = now();
+// Optional filters. Leave empty for the complete price sheet.
+let modelSearch = '';  // Examples: 'gpt-5', 'claude', 'sonnet'
+let regionSearch = ''; // Example: 'US East 2'
+let offerId = '';      // Example: 'MS-AZR-0017P'
+Prices()
+| where x_EffectivePeriodStart <= asOf
+    and (isnull(x_EffectivePeriodEnd) or x_EffectivePeriodEnd > asOf)
+//
+// Identify current CCU and legacy per-model Claude meters.
+// Exclude unrelated Azure Databricks Anthropic DBU meters.
+//
+| extend IsClaudeText =
+    SkuMeter has_any (
+        'Claude',
+        'Anthropic',
+        'Sonnet',
+        'Opus',
+        'Haiku',
+        'CCU'
+    )
+    or x_SkuDescription has_any (
+        'Claude',
+        'Anthropic',
+        'Sonnet',
+        'Opus',
+        'Haiku',
+        'CCU'
+    )
+    or x_SkuMeterSubcategory has_any (
+        'Claude',
+        'Anthropic',
+        'Sonnet',
+        'Opus',
+        'Haiku',
+        'CCU'
+    )
+| extend IsClaudeMarketplace =
+    IsClaudeText
+    and x_SkuMeterCategory !~ 'Azure Databricks'
+| extend PriceSource = case(
+    IsClaudeMarketplace, 'Marketplace - Claude',
+    x_SkuMeterCategory == 'Foundry Models', 'Microsoft Foundry',
+    ''
+)
+| where isnotempty(PriceSource)
+//
+// Optional search filters. has matches whole terms and separator-bounded
+// phrases, which covers model identifiers embedded in hyphenated meter names
+// (for example, 'gpt-5' in 'gpt-5-mini ... Tokens').
+//
+| where isempty(modelSearch)
+    or SkuMeter has modelSearch
+    or x_SkuDescription has modelSearch
+    or x_SkuMeterSubcategory has modelSearch
+| where isempty(regionSearch) or x_SkuRegion =~ regionSearch
+| where isempty(offerId) or x_SkuOfferId == offerId
+//
+// Use the most specific available price.
+//
+| extend EffectiveUnitPrice = coalesce(
+    x_EffectiveUnitPrice,
+    ContractedUnitPrice,
+    ListUnitPrice
+)
+//
+// Normalize token meters to price per 1 million tokens.
+// Claude CCU prices are normalized to price per CCU.
+//
+| extend PricePer1MTokens = iff(
+    SkuMeter has 'Tokens' and x_PricingBlockSize > 0,
+    round(
+        EffectiveUnitPrice * 1000000.0 / x_PricingBlockSize,
+        8
+    ),
+    real(null)
+)
+| extend PricePerCCU = iff(
+    IsClaudeMarketplace
+        and SkuMeter has 'CCU'
+        and x_PricingBlockSize > 0,
+    round(
+        EffectiveUnitPrice / x_PricingBlockSize,
+        8
+    ),
+    real(null)
+)
+| project
+    PriceSource,
+    ModelFamily = x_SkuMeterSubcategory,
+    Meter = SkuMeter,
+    Description = x_SkuDescription,
+    Region = x_SkuRegion,
+    PricingCurrency,
+    PricingUnit,
+    PricingBlockSize = x_PricingBlockSize,
+    PricingUnitDescription = x_PricingUnitDescription,
+    ListUnitPrice,
+    ContractedUnitPrice,
+    EffectiveUnitPrice,
+    PricePer1MTokens,
+    PricePerCCU,
+    SkuPriceId,
+    SkuId,
+    ProductId = x_SkuProductId,
+    OfferId = x_SkuOfferId,
+    PartNumber = x_SkuPartNumber,
+    EffectiveFrom = x_EffectivePeriodStart,
+    EffectiveTo = x_EffectivePeriodEnd
+| order by
+    PriceSource asc,
+    ModelFamily asc,
+    Meter asc,
+    Region asc

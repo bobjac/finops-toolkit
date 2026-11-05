@@ -368,6 +368,9 @@ venv/
 ENV/
 env/
 
+# Local temporary files
+/.tmp/
+
 # macOS
 .DS_Store
 
@@ -380,6 +383,7 @@ env/
 /PRD.md
 /RTM.md
 /RETROSPECTIVES.md
+/specs/
 
 # Auto-generated build artifacts
 src/templates/finops-hub-copilot-studio/knowledge/query-catalog.md

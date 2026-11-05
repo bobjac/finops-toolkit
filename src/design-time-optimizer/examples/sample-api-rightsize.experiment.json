@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "name": "sample-api-rightsize",
+  "description": "Compare equivalent baseline and candidate deployments under the same request load.",
+  "workloadUnit": {
+    "name": "successful requests",
+    "quantity": 1000
+  },
+  "scope": {
+    "subscriptionId": "${EXPERIMENT_SUBSCRIPTION_ID}",
+    "resourceGroupPrefix": "dto-sample-api",
+    "region": "eastus2"
+  },
+  "variants": {
+    "baseline": {
+      "ref": "main"
+    },
+    "candidate": {
+      "ref": "current"
+    }
+  },
+  "load": {
+    "testFile": "tests/load/sample-api.jmx",
+    "warmupMinutes": 2,
+    "durationMinutes": 10,
+    "virtualUsers": 20
+  },
+  "guardrails": {
+    "p95LatencyMs": {
+      "maximum": 500
+    },
+    "errorRatePercent": {
+      "maximum": 1
+    },
+    "throughputPerSecond": {
+      "minimum": 40
+    }
+  },
+  "cost": {
+    "currency": "USD",
+    "pricingSource": "finops-hub",
+    "requiredMeters": [
+      "compute",
+      "requests"
+    ]
+  },
+  "cleanup": {
+    "maximumLifetimeMinutes": 90
+  }
+}
