@@ -351,5 +351,10 @@ if ($ReportPath)
 {
     $report | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $ReportPath
 }
-if ($failures.Count) { throw "Sandbox preflight blocked: $(($failures | ForEach-Object { $_.Name }) -join ', '). Review the evidence report and administrator setup." }
+if ($failures.Count)
+{
+    $exception = [InvalidOperationException]::new("Sandbox preflight blocked: $(($failures | ForEach-Object { $_.Name }) -join ', '). Review the evidence report and administrator setup.")
+    $exception.Data['FailedChecks'] = @($failures | ForEach-Object { $_.Name })
+    throw $exception
+}
 [pscustomobject]$report

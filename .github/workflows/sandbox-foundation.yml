@@ -1,0 +1,156 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sandbox foundation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Verify retained resources, deploy paid resources, or remove the foundation
+        type: choice
+        default: Verify
+        options:
+          - Verify
+          - Deploy
+          - Remove
+      confirmation:
+        description: For Deploy or Remove, enter ftk-dto-hack-foundation to confirm the owned group
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sandbox-foundation
+  cancel-in-progress: false
+
+jobs:
+  foundation:
+    if: github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 90
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      FOUNDATION_OPERATION: ${{ inputs.operation }}
+      FOUNDATION_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Check out the selected fork revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install test modules
+        if: inputs.operation != 'Remove'
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Repository PSGallery -Force
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Repository PSGallery -Force
+
+      - name: Test foundation lifecycle and preflight
+        if: inputs.operation != 'Remove'
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 6.0.0
+          $tests = @(
+            './src/powershell/Tests/Unit/DesignTimeOptimizerSandbox.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizerFoundation.Tests.ps1'
+          )
+          $result = Invoke-Pester -Path $tests -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed') { throw 'Foundation unit tests failed.' }
+          foreach ($script in @('Invoke-DesignTimeOptimizerFoundation', 'Test-DesignTimeOptimizerSandbox')) {
+            $issues = @(Invoke-ScriptAnalyzer -Path "./src/scripts/$script.ps1" -Severity Warning,Error)
+            if ($issues.Count) { $issues | Format-Table -AutoSize; throw "$script lint failed." }
+          }
+
+      - name: Install Bicep
+        if: inputs.operation == 'Deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep install
+          echo "$HOME/.azure/bin" >> "$GITHUB_PATH"
+
+      - name: Build canonical hub and foundation wrapper
+        if: inputs.operation == 'Deploy'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./src/scripts/Build-Toolkit.ps1 -Template finops-hub
+          bicep build ./release/finops-hub/main.bicep --outfile ./release/finops-hub/azuredeploy.json
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical hub compilation failed.' }
+          bicep build ./hack/foundation.bicep --outfile ./release/hack-foundation.json
+          if ($LASTEXITCODE -ne 0) { throw 'Foundation wrapper compilation failed.' }
+          if ((Get-Content ./release/hack-foundation.json -Raw).Contains('$$ftkver$$')) { throw 'Unexpanded toolkit version in foundation template.' }
+
+      - name: Sign in to Azure
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install quota extension
+        if: inputs.operation != 'Remove'
+        shell: bash
+        run: az extension add --name quota --only-show-errors
+
+      - name: Run foundation lifecycle
+        shell: pwsh
+        run: |
+          ./src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1 `
+            -Operation $env:FOUNDATION_OPERATION `
+            -ConfirmResourceGroup $env:FOUNDATION_CONFIRMATION `
+            -OutputDirectory "$env:RUNNER_TEMP/foundation" `
+            -DeploymentPasses 2 -Confirm:$false
+
+      - name: Remove only a failed foundation created by this run
+        if: always() && inputs.operation == 'Deploy'
+        shell: pwsh
+        run: |
+          $path = "$env:RUNNER_TEMP/foundation/foundation.json"
+          if (-not (Test-Path -LiteralPath $path)) { exit 0 }
+          $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          if (-not $report.CreatedThisRun -or $report.RunId -ne $env:GITHUB_RUN_ID -or $report.Status -eq 'VerifiedAndRetained') { exit 0 }
+          ./src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1 `
+            -Operation Remove -ConfirmResourceGroup $report.ResourceGroup `
+            -OutputDirectory "$env:RUNNER_TEMP/foundation-cleanup" -Confirm:$false
+
+      - name: Summarize retained resources or removal
+        if: always()
+        shell: pwsh
+        run: |
+          $path = "$env:RUNNER_TEMP/foundation/foundation.json"
+          if (-not (Test-Path -LiteralPath $path)) {
+            'Foundation stopped before producing an Azure lifecycle report. Review the failing step.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          @(
+            '### Sandbox foundation'
+            "Revision: $env:GITHUB_SHA"
+            "Operation: $($report.Operation); status: $($report.Status)"
+            "Resource group: $($report.ResourceGroup)"
+            "Verified deployment passes: $(@($report.Passes).Count)"
+            "Ready for data ingestion: $($report.ReadyForDataIngestion)"
+            "Configured expiration: $($report.ExpiresOn)"
+            ''
+            'Successful resources are retained and incur charges. The declared budget and expiration do not stop resources.'
+            'Remove through this workflow with operation Remove and the exact resource group confirmation.'
+            'A failed redeployment never automatically deletes a previously retained foundation. See the evidence artifact for failure cleanup.'
+            'No sample application, model, fixture ingestion, or workbook deployment is included.'
+          ) >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload nonsecret foundation evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sandbox-foundation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/foundation/*.json
+            ${{ runner.temp }}/foundation-cleanup/*.json
+          if-no-files-found: warn
+          retention-days: 7
