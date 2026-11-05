@@ -6,6 +6,12 @@ This file provides guidance to AI Agents when working with code in this reposito
 
 The FinOps Toolkit is an open-source collection of tools for adopting and implementing FinOps capabilities in the Microsoft Cloud. It contains templates, PowerShell modules, workbooks, optimization engines, and supporting documentation organized in a modular architecture.
 
+## Issue Implementation Workflow
+
+For "build issue N", "implement issue N", or "build the next issue" in this fork, use the repository-local [build-issue skill](./skills/build-issue/SKILL.md). It checks prerequisites, creates an issue branch from `origin/dev`, implements and validates, and publishes a PR explicitly to `bobjac/finops-toolkit:dev` after required approval.
+
+This workflow takes precedence over personal issue-workflow defaults for this repository. Do not combine it with a workflow that closes an issue before merge. Keep all hack tracking issues and PRs in the fork, never upstream; preserve the existing Git approval and history rules.
+
 ## Common Commands
 
 ### Building and Development
