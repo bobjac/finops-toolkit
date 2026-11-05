@@ -5,6 +5,7 @@ BeforeAll {
     $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
     $script:Validator = Join-Path $script:RepoRoot 'src/scripts/Test-DesignTimeOptimizerSandbox.ps1'
     $script:Example = Join-Path $script:RepoRoot 'hack/sandbox.config.json'
+    $script:PriorTestState = Get-Variable -Name DesignTimeOptimizerSandboxTestState -Scope Global -ErrorAction SilentlyContinue
     $script:SavedEnvironment = @{}
     foreach ($name in 'AZURE_SUBSCRIPTION_ID', 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID') {
         $script:SavedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
@@ -20,6 +21,12 @@ AfterAll {
     foreach ($name in $script:SavedEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $script:SavedEnvironment[$name])
     }
+    if ($script:PriorTestState) {
+        Set-Variable -Name DesignTimeOptimizerSandboxTestState -Scope Global -Value $script:PriorTestState.Value
+    }
+    else {
+        Remove-Variable -Name DesignTimeOptimizerSandboxTestState -Scope Global -ErrorAction SilentlyContinue
+    }
 }
 
 Describe 'Design-time optimizer sandbox preflight' {
@@ -31,19 +38,20 @@ Describe 'Design-time optimizer sandbox preflight' {
         $env:AZURE_SUBSCRIPTION_ID = '11111111-1111-1111-1111-111111111111'
         $env:AZURE_TENANT_ID = '22222222-2222-2222-2222-222222222222'
         $env:AZURE_CLIENT_ID = '33333333-3333-3333-3333-333333333333'
-        $script:Account = @{
+        $script:Azure = @{}
+        $script:Azure.Account = @{
             id = $env:AZURE_SUBSCRIPTION_ID; tenantId = $env:AZURE_TENANT_ID; state = 'Enabled'
             user = @{ type = 'servicePrincipal'; name = $env:AZURE_CLIENT_ID }
         }
-        $script:Providers = @(
+        $script:Azure.Providers = @(
             'Microsoft.Storage', 'Microsoft.DataFactory', 'Microsoft.KeyVault', 'Microsoft.EventGrid',
             'Microsoft.CostManagementExports', 'Microsoft.Kusto', 'Microsoft.Network', 'Microsoft.ContainerInstance', 'Microsoft.Quota',
             'Microsoft.ManagedIdentity', 'Microsoft.OperationalInsights', 'Microsoft.Insights',
             'Microsoft.App', 'Microsoft.ContainerRegistry', 'Microsoft.CognitiveServices', 'Microsoft.LoadTestService'
         ) | ForEach-Object { @{ namespace = $_; registrationState = 'Registered' } }
-        $script:Permissions = @(@{ actions = @('*'); notActions = @(); dataActions = @(); notDataActions = @() })
-        $script:Skus = @{ value = @(@{ name = $script:Config.dataExplorerSku; restrictions = @() }) }
-        $script:Models = @(@{
+        $script:Azure.Permissions = @(@{ actions = @('*'); notActions = @(); dataActions = @(); notDataActions = @() })
+        $script:Azure.Skus = @{ value = @(@{ name = $script:Config.dataExplorerSku; restrictions = @() }) }
+        $script:Azure.Models = @(@{
                 kind = 'OpenAI'
                 model = @{
                     name = 'gpt-4.1-mini'; version = 'test-version'; lifecycleStatus = 'GenerallyAvailable'
@@ -53,32 +61,35 @@ Describe 'Design-time optimizer sandbox preflight' {
                         })
                 }
             })
-        $script:Usage = @(@{ name = @{ value = 'discovered-usage-name' }; limit = 10; currentValue = 0 })
-        $script:QuotaError = ''
-        $script:QueryResult = @(@{ FrameType = 'DataSetCompletion'; HasErrors = $false })
-        $script:Calls = [Collections.Generic.List[string]]::new()
+        $script:Azure.Usage = @(@{ name = @{ value = 'discovered-usage-name' }; limit = 10; currentValue = 0 })
+        $script:Azure.QuotaError = ''
+        $script:Azure.QueryResult = @(@{ FrameType = 'DataSetCompletion'; HasErrors = $false })
+        $script:Azure.Calls = [Collections.Generic.List[string]]::new()
+        # Native-command mocks run in the invoked script's scope, not this test's script scope.
+        $global:DesignTimeOptimizerSandboxTestState = $script:Azure
         Mock az {
             param($Arguments)
+            $state = $global:DesignTimeOptimizerSandboxTestState
             $call = $Arguments -join ' '
-            $script:Calls.Add($call)
+            $state.Calls.Add($call)
             $global:LASTEXITCODE = 0
-            if ($call -like 'account show*') { $response = $script:Account }
-            elseif ($call -like 'provider list*') { $response = $script:Providers }
-            elseif ($call -match '/Microsoft.Authorization/permissions\?') { $response = @{ value = $script:Permissions } }
-            elseif ($call -match '/Microsoft.Kusto/locations/.*/skus\?') { $response = $script:Skus }
+            if ($call -like 'account show*') { $response = $state.Account }
+            elseif ($call -like 'provider list*') { $response = $state.Providers }
+            elseif ($call -match '/Microsoft.Authorization/permissions\?') { $response = @{ value = $state.Permissions } }
+            elseif ($call -match '/Microsoft.Kusto/locations/.*/skus\?') { $response = $state.Skus }
             elseif ($call -like 'quota list*') {
-                if ($script:QuotaError) {
+                if ($state.QuotaError) {
                     $global:LASTEXITCODE = 1
-                    return $script:QuotaError
+                    return $state.QuotaError
                 }
                 $response = @()
             }
-            elseif ($call -like 'cognitiveservices model list*') { $response = $script:Models }
-            elseif ($call -like 'cognitiveservices usage list*') { $response = $script:Usage }
+            elseif ($call -like 'cognitiveservices model list*') { $response = $state.Models }
+            elseif ($call -like 'cognitiveservices usage list*') { $response = $state.Usage }
             elseif ($call -match '/Microsoft.Storage/storageAccounts/teststorage\?') { $response = @{ name = 'teststorage' } }
             elseif ($call -like 'storage container list*') { $response = @() }
             elseif ($call -match '/Microsoft.Kusto/clusters/testcluster\?') { $response = @{ properties = @{ uri = 'https://testcluster.eastus2.kusto.windows.net' } } }
-            elseif ($call -match '/v2/rest/query ') { $response = $script:QueryResult }
+            elseif ($call -match '/v2/rest/query ') { $response = $state.QueryResult }
             else { throw "Unexpected Azure operation in test: $call" }
             ConvertTo-Json -InputObject $response -Depth 30 -Compress
         }
@@ -114,7 +125,7 @@ Describe 'Design-time optimizer sandbox preflight' {
 
     It 'Stops when the signed-in identity targets another subscription' {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:Account.id = '44444444-4444-4444-4444-444444444444'
+        $script:Azure.Account.id = '44444444-4444-4444-4444-444444444444'
         { & $script:Validator -Path $script:ConfigPath } | Should -Throw '*configured sandbox deployment identity*'
         Should -Invoke az -Times 1 -Exactly
     }
@@ -126,14 +137,14 @@ Describe 'Design-time optimizer sandbox preflight' {
         $result.ReadyForDataIngestion | Should -BeFalse
         ($result.Checks | Where-Object Name -EQ 'Data-plane access').Status | Should -Be 'Deferred'
         ($result.Checks | Where-Object Name -EQ 'Model runtime access').Status | Should -Be 'Deferred'
-        @($script:Calls | Where-Object { $_ -match '(group create|provider register|role assignment create|deployment create)' }).Count | Should -Be 0
+        @($script:Azure.Calls | Where-Object { $_ -match '(group create|provider register|role assignment create|deployment create)' }).Count | Should -Be 0
         Get-Content $script:ReportPath -Raw | Should -Not -Match ([regex]::Escape($env:AZURE_SUBSCRIPTION_ID))
     }
 
     It 'Blocks administrator prerequisites and honors role exclusions' {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:Providers[0].registrationState = 'NotRegistered'
-        $script:Permissions[0].notActions = @('Microsoft.Authorization/roleAssignments/*')
+        $script:Azure.Providers[0].registrationState = 'NotRegistered'
+        $script:Azure.Permissions[0].notActions = @('Microsoft.Authorization/roleAssignments/*')
         { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Resource providers, Deployment permissions*'
         $report = Get-Content $script:ReportPath -Raw | ConvertFrom-Json
         $report.ReadyForInfrastructureDeployment | Should -BeFalse
@@ -142,7 +153,7 @@ Describe 'Design-time optimizer sandbox preflight' {
 
     It 'Does not mistake an unrelated quota meter for model capacity' {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:Usage[0].name.value = 'unrelated-meter'
+        $script:Azure.Usage[0].name.value = 'unrelated-meter'
         { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Model capacity*'
     }
 
@@ -151,17 +162,17 @@ Describe 'Design-time optimizer sandbox preflight' {
         @{ Limit = $null; Current = 0 }
     ) {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:Usage[0].limit = $Limit
-        $script:Usage[0].currentValue = $Current
+        $script:Azure.Usage[0].limit = $Limit
+        $script:Azure.Usage[0].currentValue = $Current
         { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Model capacity*'
     }
 
     It 'Uses service-specific quota only for an explicitly unsupported generic provider' {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:QuotaError = 'This resource provider is not supported by the quota API.'
+        $script:Azure.QuotaError = 'This resource provider is not supported by the quota API.'
         $result = & $script:Validator -Path $script:ConfigPath
         ($result.Checks | Where-Object Name -EQ 'Model capacity').Evidence.Source | Should -Match 'explicitly does not support'
-        $script:QuotaError = 'AuthorizationFailed: private-diagnostic-value'
+        $script:Azure.QuotaError = 'AuthorizationFailed: private-diagnostic-value'
         { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Model capacity*'
         Get-Content $script:ReportPath -Raw | Should -Not -Match 'private-diagnostic-value'
     }
@@ -171,7 +182,7 @@ Describe 'Design-time optimizer sandbox preflight' {
         @{ SkuResponse = @{ value = @(); nextLink = 'https://untrusted.example/skus' } }
     ) {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:Skus = $SkuResponse
+        $script:Azure.Skus = $SkuResponse
         { & $script:Validator -Path $script:ConfigPath -ReportPath $script:ReportPath } | Should -Throw '*Data Explorer SKU*'
     }
 
@@ -186,12 +197,12 @@ Describe 'Design-time optimizer sandbox preflight' {
         $script:Config.dataPlane.storageAccountResourceId = "/subscriptions/$env:AZURE_SUBSCRIPTION_ID/resourceGroups/test/providers/Microsoft.Storage/storageAccounts/teststorage"
         $script:Config.dataPlane.dataExplorerResourceId = "/subscriptions/$env:AZURE_SUBSCRIPTION_ID/resourceGroups/test/providers/Microsoft.Kusto/clusters/testcluster"
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $script:Permissions[0].dataActions = @('Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*')
+        $script:Azure.Permissions[0].dataActions = @('Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*')
         $result = & $script:Validator -Path $script:ConfigPath -RequireDataPlane
         $result.ReadyForDataIngestion | Should -BeTrue
-        @($script:Calls | Where-Object { $_ -like 'storage container list*--auth-mode login*' }).Count | Should -Be 1
-        @($script:Calls | Where-Object { $_ -match '/v2/rest/query ' }).Count | Should -Be 2
-        $script:QueryResult[0].HasErrors = $true
+        @($script:Azure.Calls | Where-Object { $_ -like 'storage container list*--auth-mode login*' }).Count | Should -Be 1
+        @($script:Azure.Calls | Where-Object { $_ -match '/v2/rest/query ' }).Count | Should -Be 2
+        $script:Azure.QueryResult[0].HasErrors = $true
         { & $script:Validator -Path $script:ConfigPath -RequireDataPlane -ReportPath $script:ReportPath } | Should -Throw '*Data-plane access*'
         (Get-Content $script:ReportPath -Raw | ConvertFrom-Json).ReadyForDataIngestion | Should -BeFalse
     }
