@@ -144,6 +144,8 @@ Inspect the repository's current PR template before drafting:
 
 Use the applicable template and preserve its headings, comments, checklist items, and order. Replace placeholders with accurate content. Mark screenshots as not applicable when appropriate without substituting a generic body. Check only tests actually run; include exact commands and results or explicit reasons they were not run.
 
+Do not include Copilot co-author attribution or session trailers in the PR title or body. Any required `Co-authored-by` and `Copilot-Session` trailers belong only in Git commit messages; do not copy them into the PR description.
+
 Use `Fixes bobjac/finops-toolkit#<N>` so merging into the fork's default `dev` closes the intended issue. Do not call `gh issue close` before merge.
 
 Leave deployment checklist options unchecked unless the user has explicitly approved their associated workflows. A request to implement an issue is not approval for automatic Azure deployment.
