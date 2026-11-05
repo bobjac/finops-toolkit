@@ -1,0 +1,84 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sandbox connection test
+
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: Azure region for the resource group
+        required: true
+        default: eastus2
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sandbox-smoke-test
+  cancel-in-progress: false
+
+jobs:
+  create-resource-group:
+    name: Create and verify resource group
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: sandbox
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: rg-ftk-sandbox-smoke
+      LOCATION: ${{ inputs.location }}
+    steps:
+      - name: Check configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [[ -z "$(printenv "$name")" ]]; then
+              echo "::error::Missing $name in the sandbox environment secrets."
+              exit 1
+            fi
+          done
+
+      - name: Sign in to Azure
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create and verify resource group
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_subscription="$(az account show --query id --output tsv)"
+          if [[ "${actual_subscription,,}" != "${AZURE_SUBSCRIPTION_ID,,}" ]]; then
+            echo "::error::Azure CLI is not targeting the configured sandbox subscription."
+            exit 1
+          fi
+
+          az group create \
+            --name "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            --tags ftk-tool=sandbox-smoke-test \
+            --output none
+
+          state="$(az group show --name "$RESOURCE_GROUP" --query properties.provisioningState --output tsv)"
+          if [[ "$state" != "Succeeded" ]]; then
+            echo "::error::Resource group provisioning state is $state."
+            exit 1
+          fi
+
+          az group show --name "$RESOURCE_GROUP" \
+            --query '{name:name,location:location,state:properties.provisioningState}' \
+            --output table
+
+          {
+            echo "### Sandbox connection verified"
+            echo "Created or updated resource group: \`$RESOURCE_GROUP\`."
+            echo "No billable resources were deployed. The resource group is retained for inspection."
+          } >> "$GITHUB_STEP_SUMMARY"

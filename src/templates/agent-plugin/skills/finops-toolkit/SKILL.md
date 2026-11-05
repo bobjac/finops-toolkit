@@ -40,6 +40,7 @@ Load only the references relevant to the task at hand.
 | PowerShell commands | `toolkit/powershell/powershell-commands.md` + the specific command file |
 | Connect to hub for first time | `/ftk/hubs-connect`, `references/settings-format.md` |
 | Check hub health / version | `/ftk/hubs-health-check`, `toolkit/hubs/compatibility.md` |
+| Validate a design-time optimization | `/ftk/optimize`, then load the `design-time-optimizer` skill |
 
 ## Database functions
 

@@ -1,0 +1,230 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aka.ms/finops-toolkit/schemas/design-time-optimizer/experiment-v1.json",
+  "title": "FinOps design-time optimizer experiment",
+  "description": "Defines a reproducible baseline-versus-candidate cost optimization experiment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "name",
+    "workloadUnit",
+    "scope",
+    "variants",
+    "load",
+    "guardrails",
+    "cost",
+    "cleanup"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "workloadUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "quantity"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "quantity": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "region"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resourceGroupPrefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "variants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "candidate"
+      ],
+      "properties": {
+        "baseline": {
+          "$ref": "#/definitions/variant"
+        },
+        "candidate": {
+          "$ref": "#/definitions/variant"
+        }
+      }
+    },
+    "load": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testFile",
+        "warmupMinutes",
+        "durationMinutes",
+        "virtualUsers"
+      ],
+      "properties": {
+        "testFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "warmupMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60
+        },
+        "durationMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240
+        },
+        "virtualUsers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "guardrails": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "p95LatencyMs": {
+          "$ref": "#/definitions/maximumGuardrail"
+        },
+        "errorRatePercent": {
+          "$ref": "#/definitions/maximumGuardrail"
+        },
+        "throughputPerSecond": {
+          "$ref": "#/definitions/minimumGuardrail"
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "pricingSource",
+        "requiredMeters"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "pricingSource": {
+          "type": "string",
+          "enum": [
+            "finops-hub",
+            "azure-retail-prices",
+            "custom"
+          ]
+        },
+        "requiredMeters": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumLifetimeMinutes"
+      ],
+      "properties": {
+        "maximumLifetimeMinutes": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 1440
+        }
+      }
+    }
+  },
+  "definitions": {
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "maximumGuardrail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximum"
+      ],
+      "properties": {
+        "maximum": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "minimumGuardrail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum"
+      ],
+      "properties": {
+        "minimum": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

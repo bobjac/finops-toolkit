@@ -100,7 +100,7 @@ Describe 'Agent plugin components' {
     }
 
     It 'Requires explicit invocation for commands that access hub data or write reports' {
-        foreach ($command in @('hubs-connect.md', 'hubs-health-check.md', 'mom-report.md', 'ytd-report.md'))
+        foreach ($command in @('hubs-connect.md', 'hubs-health-check.md', 'mom-report.md', 'optimize.md', 'ytd-report.md'))
         {
             $content = Get-Content (Join-Path $script:Plugin "commands/ftk/$command") -Raw
             $content | Should -Match '(?m)^disable-model-invocation:\s*true\s*$'
@@ -131,6 +131,12 @@ Describe 'Agent plugin components' {
         Join-Path $script:Plugin 'skills/finops-toolkit/SKILL.md' | Should -Exist
     }
 
+    It 'Ships the design-time optimizer agent, command, and skill' {
+        Join-Path $script:Plugin 'agents/ftk-design-time-optimizer.md' | Should -Exist
+        Join-Path $script:Plugin 'commands/ftk/optimize.md' | Should -Exist
+        Join-Path $script:Plugin 'skills/design-time-optimizer/SKILL.md' | Should -Exist
+    }
+
     It 'Documents required kusto_query parameters in skill docs' {
         foreach ($doc in @('skills/finops-toolkit/SKILL.md', 'skills/finops-toolkit/README.md'))
         {
@@ -154,6 +160,22 @@ Describe 'Agent plugin components' {
         $docs = Get-ChildItem (Join-Path $bundle 'skills/finops-toolkit/references/docs-mslearn') -File -Recurse
         $docs.Count | Should -BeGreaterThan 0
         $docs.Extension | Select-Object -Unique | Should -Be @('.md')
+    }
+
+    It 'Bundles design-time optimizer contracts and validation' {
+        $bundle = Join-Path $TestDrive 'agent-plugin'
+        Copy-Item $script:Plugin -Destination $bundle -Recurse
+
+        & (Join-Path $script:RepoRoot 'src/scripts/Build-AgentPlugin.ps1') -DestDir $bundle
+
+        $optimizerSkill = Join-Path $bundle 'skills/design-time-optimizer'
+        Join-Path $optimizerSkill 'references/experiment.schema.json' | Should -Exist
+        Join-Path $optimizerSkill 'references/sample-api-rightsize.experiment.json' | Should -Exist
+        Join-Path $optimizerSkill 'scripts/Test-DesignTimeOptimizerExperiment.ps1' | Should -Exist
+
+        $result = & (Join-Path $optimizerSkill 'scripts/Test-DesignTimeOptimizerExperiment.ps1') `
+            -Path (Join-Path $optimizerSkill 'references/sample-api-rightsize.experiment.json')
+        $result.Valid | Should -BeTrue
     }
 }
 
