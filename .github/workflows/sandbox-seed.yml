@@ -1,0 +1,160 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sandbox seed data
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Enter ftk-dto-hack-foundation to replace the dedicated sample partitions
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sandbox-foundation
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    if: github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 75
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SEED_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Check out the selected fork revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the replacement confirmation
+        shell: pwsh
+        run: |
+          $config = Get-Content ./hack/sandbox.config.json -Raw | ConvertFrom-Json
+          if ($env:SEED_CONFIRMATION -cne "$($config.resourceGroupPrefix)-foundation") {
+            throw 'Enter the exact owned foundation resource group name.'
+          }
+
+      - name: Use the validated Python version
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Install seed and test dependencies
+        shell: pwsh
+        run: |
+          python3 -m pip install -r ./src/design-time-optimizer/seed/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Seed dependency installation failed.' }
+          Install-Module -Name Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Repository PSGallery -Force
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Repository PSGallery -Force
+          az extension add --name quota --only-show-errors
+          if ($LASTEXITCODE -ne 0) { throw 'Quota extension installation failed.' }
+
+      - name: Test seed conversion, coverage, replacement, and failure handling
+        shell: pwsh
+        run: |
+          python3 -m unittest discover -s ./src/design-time-optimizer/seed -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Seed preparation tests failed.' }
+          Import-Module Pester -MinimumVersion 6.0.0
+          $tests = @(
+            './src/powershell/Tests/Unit/DesignTimeOptimizerSandbox.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizerFoundation.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizerSeed.Tests.ps1'
+          )
+          $result = Invoke-Pester -Path $tests -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed') { throw 'Seed and prerequisite tests failed.' }
+          $issues = @(Invoke-ScriptAnalyzer -Path ./src/scripts/Import-DesignTimeOptimizerSeed.ps1 -Severity Warning,Error)
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Seed script lint failed.' }
+
+      - name: Prepare both passes from one authoritative public price snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 src/design-time-optimizer/seed/prepare.py \
+            --output "$RUNNER_TEMP/seed-first" --source-revision "$GITHUB_SHA"
+          python3 src/design-time-optimizer/seed/prepare.py \
+            --output "$RUNNER_TEMP/seed-second" --source-revision "$GITHUB_SHA" \
+            --retail-snapshot "$RUNNER_TEMP/seed-first/retail-source.json"
+
+      - name: Sign in for the first ingestion pass
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Seed and verify actual hub rows
+        shell: pwsh
+        run: |
+          ./src/scripts/Import-DesignTimeOptimizerSeed.ps1 `
+            -SeedDirectory "$env:RUNNER_TEMP/seed-first" `
+            -OutputDirectory "$env:RUNNER_TEMP/seed-evidence-first" `
+            -ConfirmResourceGroup $env:SEED_CONFIRMATION -Confirm:$false
+
+      - name: Refresh Azure sign-in for the replacement pass
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Replace the same logical dataset and compare scoped totals
+        shell: pwsh
+        run: |
+          ./src/scripts/Import-DesignTimeOptimizerSeed.ps1 `
+            -SeedDirectory "$env:RUNNER_TEMP/seed-second" `
+            -OutputDirectory "$env:RUNNER_TEMP/seed-evidence-second" `
+            -BaselineReport "$env:RUNNER_TEMP/seed-evidence-first/seed-report.json" `
+            -ConfirmResourceGroup $env:SEED_CONFIRMATION -Confirm:$false
+
+      - name: Summarize verified seed readiness
+        if: always()
+        shell: pwsh
+        run: |
+          $firstPath = "$env:RUNNER_TEMP/seed-evidence-first/seed-report.json"
+          $secondPath = "$env:RUNNER_TEMP/seed-evidence-second/seed-report.json"
+          if (-not (Test-Path $firstPath) -or -not (Test-Path $secondPath)) {
+            'Seed validation is incomplete. Ready for seeded history: false. Review the failing step and evidence.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          $first = Get-Content $firstPath -Raw | ConvertFrom-Json
+          $second = Get-Content $secondPath -Raw | ConvertFrom-Json
+          $ready = $first.ReadyForSeededHistory -and $second.ReadyForSeededHistory -and $second.BaselineMatch
+          @(
+            '### Sandbox seed data'
+            "Revision: $env:GITHUB_SHA"
+            "First pass: $($first.Status); replacement pass: $($second.Status)"
+            "Identical logical row counts and scoped totals: $($second.BaselineMatch)"
+            "Ready for seeded history: $ready"
+            ''
+            'June 2024 sample history is not actual sandbox usage or measured savings.'
+            'Public retail GPT-5 mini prices are estimates, not negotiated account prices.'
+            'Failed passes retain diagnostic reports and partial seed state for a confirmed rerun; they never delete the foundation.'
+            'Paid foundation resources remain running. This does not deploy a model, sample application, or workbook.'
+          ) >> $env:GITHUB_STEP_SUMMARY
+          if (-not $ready) { throw 'Both seed passes must complete successfully before reporting readiness.' }
+
+      - name: Upload nonsecret seed evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sandbox-seed-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/seed-first/seed.json
+            ${{ runner.temp }}/seed-first/retail-source.json
+            ${{ runner.temp }}/seed-first/*/manifest.json
+            ${{ runner.temp }}/seed-second/seed.json
+            ${{ runner.temp }}/seed-second/*/manifest.json
+            ${{ runner.temp }}/seed-evidence-first/*.json
+            ${{ runner.temp }}/seed-evidence-first/foundation/*.json
+            ${{ runner.temp }}/seed-evidence-second/*.json
+            ${{ runner.temp }}/seed-evidence-second/foundation/*.json
+          if-no-files-found: warn
+          retention-days: 7

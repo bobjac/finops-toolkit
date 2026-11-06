@@ -11,6 +11,7 @@ Start with the [hack delivery plan](./project-plan.md). It defines the demonstra
 | [Hack delivery plan](./project-plan.md) | Current hack scope and linked `H01` through `H12` delivery backlog |
 | [Sandbox configuration and preflight](./sandbox-setup.md) | Selected sandbox settings, administrator setup, read-only checks, and readiness gates |
 | [Sandbox foundation](./foundation.md) | Repeatable hub deployment, verification, retained-resource outputs, and confirmed teardown |
+| [Sandbox seed data](./seed-data.md) | Typed sample history, applicable prices, ingestion verification, and duplicate-free replacement |
 | [GitHub tracking issue #2](https://github.com/bobjac/finops-toolkit/issues/2) | Ordered checklist, native sub-issue progress, and dependency graph |
 | [Hack milestone](https://github.com/bobjac/finops-toolkit/milestone/1) | Open and completed delivery issues in the fork |
 | [Design-time optimizer architecture](./specs/repositories/finops-toolkit-design-time-optimizer/architecture.md) | Standalone optimizer boundaries, contracts, and target implementation |

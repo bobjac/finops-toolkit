@@ -29,6 +29,8 @@ module hub '../release/finops-hub/main.bicep' = {
     dataExplorerName: clusterName
     dataExplorerSku: clusterSku
     dataExplorerCapacity: 1
+    // Keep the original June 2024 fixtures through the approved hack expiration.
+    dataExplorerFinalRetentionInMonths: 36
     enableManagedExports: false
     enableRecommendations: false
     scopesToMonitor: []
