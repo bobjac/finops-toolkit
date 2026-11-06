@@ -43,6 +43,8 @@ Describe 'Seed staging and ingestion verification' {
         $uploads = @($script:Calls | Where-Object { $_ -like 'storage blob upload*' })
         $uploads[0] | Should -Match '__seed\.parquet'
         $uploads[1] | Should -Match '/manifest\.json'
+        $uploads[0] | Should -Match '--no-progress'
+        $uploads[1] | Should -Match '--no-progress'
         Should -Invoke Wait-SeedPipeline -Times 1 -ParameterFilter { $BeforeUpload }
         Should -Invoke Wait-SeedPipeline -Times 1 -ParameterFilter { -not $BeforeUpload }
     }
@@ -75,6 +77,13 @@ Describe 'Seed staging and ingestion verification' {
     It 'Times out without claiming a pipeline succeeded' {
         $script:deadline = [DateTimeOffset]::UtcNow.AddSeconds(-1)
         { Wait-SeedPipeline -Folder $script:Package.folder -Since ([DateTimeOffset]::UtcNow) } | Should -Throw '*Timed out*'
+    }
+
+    It 'Matches a new successful storage-event run with a trailing folder delimiter' {
+        Mock Get-SeedPipelineRun { @{ runId = 'new'; parameters = @{ folderPath = "ingestion/$($script:Package.folder)/" }; status = 'Succeeded' } }
+        $runs = @(Wait-SeedPipeline -Folder $script:Package.folder -Since ([DateTimeOffset]::UtcNow.AddMinutes(-1)))
+        $runs.Count | Should -Be 1
+        $runs[0].RunId | Should -Be 'new'
     }
 
     It 'Does not mistake the preceding successful ingestion for the new manifest run' {

@@ -123,7 +123,7 @@ function Wait-SeedPipeline
     param([string]$Folder, [DateTimeOffset]$Since, [switch]$BeforeUpload, [string[]]$ExcludeRunId = @())
     while ([DateTimeOffset]::UtcNow -lt $deadline)
     {
-        $runs = @(Get-SeedPipelineRun -Since $Since | Where-Object { $_.parameters.folderPath -ceq "ingestion/$Folder" -and $_.runId -notin $ExcludeRunId })
+        $runs = @(Get-SeedPipelineRun -Since $Since | Where-Object { ([string]$_.parameters.folderPath).TrimEnd('/') -ceq "ingestion/$Folder" -and $_.runId -notin $ExcludeRunId })
         if (-not $BeforeUpload -and @($runs | Where-Object { $_.status -in @('Failed', 'Cancelled') }).Count)
         {
             throw "Data Factory ingestion failed or was cancelled for '$Folder'."
@@ -202,7 +202,7 @@ function Set-SeedStaging
     Wait-SeedPipeline -Folder $Package.folder -Since ([DateTimeOffset]::UtcNow.AddDays(-1)) -BeforeUpload
     $started = [DateTimeOffset]::UtcNow.AddSeconds(-5)
     $priorRuns = @(Get-SeedPipelineRun -Since $started.AddDays(-1) |
-        Where-Object { $_.parameters.folderPath -ceq "ingestion/$($Package.folder)" } |
+        Where-Object { ([string]$_.parameters.folderPath).TrimEnd('/') -ceq "ingestion/$($Package.folder)" } |
         ForEach-Object { $_.runId })
     $existing = @(Invoke-SeedAzure -Arguments (@('storage', 'blob', 'list', '--container-name', 'ingestion', '--prefix', "$($Package.folder)/") + $storageArguments))
     if ($existing.Count -gt 100) { throw 'Unexpected number of blobs in the dedicated seed partition; refusing replacement.' }
@@ -220,8 +220,8 @@ function Set-SeedStaging
         $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'delete', '--container-name', 'ingestion', '--name', $blob.name) + $storageArguments)
     }
     $localDirectory = Join-Path $SeedDirectory $Package.label
-    $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'upload', '--container-name', 'ingestion', '--name', "$($Package.folder)/$($Package.file)", '--file', (Join-Path $localDirectory $Package.file), '--overwrite', 'false') + $storageArguments)
-    $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'upload', '--container-name', 'ingestion', '--name', "$($Package.folder)/manifest.json", '--file', (Join-Path $localDirectory 'manifest.json'), '--overwrite', 'false') + $storageArguments)
+    $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'upload', '--container-name', 'ingestion', '--name', "$($Package.folder)/$($Package.file)", '--file', (Join-Path $localDirectory $Package.file), '--overwrite', 'false', '--no-progress') + $storageArguments)
+    $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'upload', '--container-name', 'ingestion', '--name', "$($Package.folder)/manifest.json", '--file', (Join-Path $localDirectory 'manifest.json'), '--overwrite', 'false', '--no-progress') + $storageArguments)
     Wait-SeedPipeline -Folder $Package.folder -Since $started -ExcludeRunId $priorRuns
 }
 
@@ -286,7 +286,7 @@ try
     $factoryUri = "https://management.azure.com$($foundation.ResourceGroupId)/providers/Microsoft.DataFactory/factories/$($foundation.Outputs.dataFactoryName)"
     $storageArguments = @('--account-name', $accountName, '--auth-mode', 'login', '--subscription', $env:AZURE_SUBSCRIPTION_ID)
     $settingsPath = Join-Path $OutputDirectory 'hub-settings.json'
-    $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'download', '--container-name', 'config', '--name', 'settings.json', '--file', $settingsPath, '--overwrite', 'true') + $storageArguments)
+    $null = Invoke-SeedAzure -Arguments (@('storage', 'blob', 'download', '--container-name', 'config', '--name', 'settings.json', '--file', $settingsPath, '--overwrite', 'true', '--no-progress') + $storageArguments)
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
     if ($settings.retention.final.months -lt 36) { throw 'The approved 36-month final retention must be deployed before importing June 2024 history.' }
     if (-not $PSCmdlet.ShouldProcess($foundation.ResourceGroupId, 'Replace only the three prepared seed partitions and verify hub ingestion')) { throw 'Seed replacement was not approved.' }
