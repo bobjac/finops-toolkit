@@ -103,7 +103,7 @@ function Get-SeedQuery
     }
 }
 
-function Get-SeedPipelineRuns
+function Get-SeedPipelineRun
 {
     [CmdletBinding()]
     param([Parameter(Mandatory)][DateTimeOffset]$Since)
@@ -123,7 +123,7 @@ function Wait-SeedPipeline
     param([string]$Folder, [DateTimeOffset]$Since, [switch]$BeforeUpload, [string[]]$ExcludeRunId = @())
     while ([DateTimeOffset]::UtcNow -lt $deadline)
     {
-        $runs = @(Get-SeedPipelineRuns -Since $Since | Where-Object { $_.parameters.folderPath -ceq "ingestion/$Folder" -and $_.runId -notin $ExcludeRunId })
+        $runs = @(Get-SeedPipelineRun -Since $Since | Where-Object { $_.parameters.folderPath -ceq "ingestion/$Folder" -and $_.runId -notin $ExcludeRunId })
         if (-not $BeforeUpload -and @($runs | Where-Object { $_.status -in @('Failed', 'Cancelled') }).Count)
         {
             throw "Data Factory ingestion failed or was cancelled for '$Folder'."
@@ -139,7 +139,7 @@ function Wait-SeedPipeline
     throw "Timed out waiting for Data Factory ingestion for '$Folder'."
 }
 
-function Test-SeedTotals
+function Test-SeedTotal
 {
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Package)
@@ -201,7 +201,7 @@ function Set-SeedStaging
     if (-not $PSCmdlet.ShouldProcess($Package.folder, 'Replace dedicated seed staging files, upload manifest last, and wait for ingestion')) { throw 'Seed staging was not approved.' }
     Wait-SeedPipeline -Folder $Package.folder -Since ([DateTimeOffset]::UtcNow.AddDays(-1)) -BeforeUpload
     $started = [DateTimeOffset]::UtcNow.AddSeconds(-5)
-    $priorRuns = @(Get-SeedPipelineRuns -Since $started.AddDays(-1) |
+    $priorRuns = @(Get-SeedPipelineRun -Since $started.AddDays(-1) |
         Where-Object { $_.parameters.folderPath -ceq "ingestion/$($Package.folder)" } |
         ForEach-Object { $_.runId })
     $existing = @(Invoke-SeedAzure -Arguments (@('storage', 'blob', 'list', '--container-name', 'ingestion', '--prefix', "$($Package.folder)/") + $storageArguments))
@@ -295,7 +295,7 @@ try
     foreach ($package in $metadata.packages)
     {
         $runs = @(Set-SeedStaging -Package $package -Confirm:$false)
-        $snapshot = Test-SeedTotals -Package $package
+        $snapshot = Test-SeedTotal -Package $package
         if ($baseline)
         {
             $previous = @($baseline.Packages | Where-Object { $_.Label -ceq $package.label })

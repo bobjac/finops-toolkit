@@ -2,7 +2,7 @@
 
 H03 ([#5](https://github.com/bobjac/finops-toolkit/issues/5)) prepares a small, labeled historical workload and applicable prices for the [sandbox foundation](./foundation.md). It does not deploy the sample application, a model, or a workbook.
 
-**Status:** Local preparation tests pass. Publication, the 36-month retention deployment, PowerShell tests and lint in GitHub Actions, and both live ingestion passes are pending. Package generation alone does not establish sandbox readiness.
+**Status:** Implementation revision `e3ac06094ce7d8573b45442ca793ae57f96f79dd` is published. The [retention deployment](https://github.com/bobjac/finops-toolkit/actions/runs/42158132682) passed both deployment passes, 35 foundation/preflight tests, build, lint, and actual data-plane verification. The [first seed workflow](https://github.com/bobjac/finops-toolkit/actions/runs/42161143613) stopped before Azure sign-in because checkout contained Git LFS pointers rather than sample contents. A targeted sample-download fix and explicit pointer detection are awaiting publication. PowerShell seed tests/lint and both live ingestion passes remain pending. Package generation alone does not establish sandbox readiness.
 
 ## Data and provenance
 
@@ -52,7 +52,7 @@ The workflow prepares two sets of fresh package UUIDs from the **same frozen ret
 
 ## Run from the fork
 
-Publish these changes to `bobjac/finops-toolkit:dev` first. Use the existing GitHub `sandbox` environment secrets; do not put credentials in the packages or workflow.
+Publish these changes to `bobjac/finops-toolkit:dev` first. The workflow explicitly downloads only the two required Git LFS samples, not unrelated workbook payloads. Use the existing GitHub `sandbox` environment secrets; do not put credentials in the packages or workflow.
 
 1. Run **Sandbox foundation** on `dev`, operation `Deploy`, confirmation `ftk-dto-hack-foundation`, to apply the approved retention change and verify the retained resources.
 2. After that workflow succeeds, run **Sandbox seed data** on `dev`, confirmation `ftk-dto-hack-foundation`.
@@ -82,11 +82,11 @@ Once package validation starts, failures persist `ReadyForSeededHistory=false` a
 
 Local validation completed:
 
-- Five Python test methods covering canonical types, invalid values, applicable price selection, missing/stale/ambiguous model pricing, preserved provenance/dates, and repeat-package equivalence.
+- Python tests cover canonical types, invalid values, applicable price selection, missing/stale/ambiguous model pricing, preserved provenance/dates, repeat-package equivalence, and actionable rejection of Git LFS pointers.
 - Real package generation using the repository samples and the public API, with the counts and totals above.
 - PowerShell syntax parsing and offline `-WhatIf`.
 - Six isolated PowerShell helper smoke checks for ADX frame parsing, partial-result rejection, failed ingestion, exclusion of preceding runs, manifest-last staging, and nonfinite totals; a real invalid-package invocation also persisted false readiness.
 
-Pester and PSScriptAnalyzer are not installed locally; their tests and lint are required steps before live ingestion in the new workflow. The 36-month wrapper compilation and live replacement evidence remain pending publication. Do not close H03 until those checks and both live passes succeed.
+Pester and PSScriptAnalyzer are not installed locally; their seed tests and lint are required steps before live ingestion in the new workflow. The 36-month wrapper compilation and foundation verification passed in run `42158132682`; live replacement evidence remains pending. Do not close H03 until seed checks and both live passes succeed.
 
 The foundation remains billable. Its declared budget and expiration tag are not a spending cap or automatic shutdown. Use the existing confirmed foundation removal workflow when the demonstration is finished.

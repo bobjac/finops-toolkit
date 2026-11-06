@@ -56,6 +56,9 @@ def number(value):
 
 def read_csv(path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
+        if stream.readline().rstrip("\r\n") == "version https://git-lfs.github.com/spec/v1":
+            raise ValueError(f"Git LFS content is missing for {path.name}; run git lfs pull for the required samples")
+        stream.seek(0)
         yield from csv.DictReader(stream)
 
 

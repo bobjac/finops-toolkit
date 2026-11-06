@@ -35,6 +35,13 @@ class SeedPreparationTests(unittest.TestCase):
             ],
         }
 
+    def test_unhydrated_lfs_samples_fail_with_actionable_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "sample.csv"
+            path.write_text("version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 100\n")
+            with self.assertRaisesRegex(ValueError, "git lfs pull"):
+                next(prepare.read_csv(path))
+
     def test_typed_conversion_uses_canonical_mapping_and_rejects_bad_values(self):
         row = {
             "BilledCost": "1.25", "ChargePeriodStart": "2024-06-01T00:00:00Z",

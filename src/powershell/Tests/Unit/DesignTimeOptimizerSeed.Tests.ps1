@@ -29,7 +29,7 @@ Describe 'Seed staging and ingestion verification' {
             rowCount = 1; billedCost = 2.5; pricingQuantity = 4
         }
         Mock Invoke-SeedAzure { throw 'Unexpected Azure request.' }
-        Mock Get-SeedPipelineRuns {}
+        Mock Get-SeedPipelineRun {}
         Mock Start-Sleep { throw 'Unexpected polling delay.' }
     }
 
@@ -68,7 +68,7 @@ Describe 'Seed staging and ingestion verification' {
     }
 
     It 'Fails rather than treating an ingestion failure as readiness' {
-        Mock Get-SeedPipelineRuns { @{ parameters = @{ folderPath = "ingestion/$($script:Package.folder)" }; status = 'Failed' } }
+        Mock Get-SeedPipelineRun { @{ parameters = @{ folderPath = "ingestion/$($script:Package.folder)" }; status = 'Failed' } }
         { Wait-SeedPipeline -Folder $script:Package.folder -Since ([DateTimeOffset]::UtcNow.AddMinutes(-1)) } | Should -Throw '*failed or was cancelled*'
     }
 
@@ -78,24 +78,24 @@ Describe 'Seed staging and ingestion verification' {
     }
 
     It 'Does not mistake the preceding successful ingestion for the new manifest run' {
-        Mock Get-SeedPipelineRuns { @{ runId = 'previous'; parameters = @{ folderPath = "ingestion/$($script:Package.folder)" }; status = 'Succeeded' } }
+        Mock Get-SeedPipelineRun { @{ runId = 'previous'; parameters = @{ folderPath = "ingestion/$($script:Package.folder)" }; status = 'Succeeded' } }
         Mock Start-Sleep { $script:deadline = [DateTimeOffset]::UtcNow.AddSeconds(-1) }
         { Wait-SeedPipeline -Folder $script:Package.folder -Since ([DateTimeOffset]::UtcNow.AddMinutes(-1)) -ExcludeRunId previous } | Should -Throw '*Timed out*'
     }
 
     It 'Rejects duplicate hub rows even when the pipeline succeeded' {
         Mock Get-SeedQuery { @{ Rows = 2; BilledCost = 2.5; PricingQuantity = 4; InvalidTags = 0; InvalidDates = 0 } }
-        { Test-SeedTotals -Package $script:Package } | Should -Throw '*row count*'
+        { Test-SeedTotal -Package $script:Package } | Should -Throw '*row count*'
     }
 
     It 'Checks scoped totals instead of accepting only the expected count' {
         Mock Get-SeedQuery { @{ Rows = 1; BilledCost = 5; PricingQuantity = 4; InvalidTags = 0; InvalidDates = 0 } }
-        { Test-SeedTotals -Package $script:Package } | Should -Throw '*BilledCost*'
+        { Test-SeedTotal -Package $script:Package } | Should -Throw '*BilledCost*'
     }
 
     It 'Rejects nonfinite hub totals instead of treating NaN as an equal total' {
         Mock Get-SeedQuery { @{ Rows = 1; BilledCost = [double]::NaN; PricingQuantity = 4; InvalidTags = 0; InvalidDates = 0 } }
-        { Test-SeedTotals -Package $script:Package } | Should -Throw '*BilledCost*'
+        { Test-SeedTotal -Package $script:Package } | Should -Throw '*BilledCost*'
     }
 
     It 'Verifies applicable price rates and blocks instead of accepting only meter presence' {
@@ -113,9 +113,9 @@ Describe 'Seed staging and ingestion verification' {
                 Region = 'US East 2'; EffectiveStart = '2025-08-01T00:00:00Z'
             }
         }
-        (Test-SeedTotals -Package $price).Rows | Should -Be 1
+        (Test-SeedTotal -Package $price).Rows | Should -Be 1
         $price.prices[0].blockSize = 1000
-        { Test-SeedTotals -Package $price } | Should -Throw '*unit coverage*'
+        { Test-SeedTotal -Package $price } | Should -Throw '*unit coverage*'
     }
 
     It 'Rejects partial ADX results with error or missing completion frames' {

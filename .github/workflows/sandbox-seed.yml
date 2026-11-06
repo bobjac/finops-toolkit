@@ -34,6 +34,12 @@ jobs:
       - name: Check out the selected fork revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Download only the two required Git LFS samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs pull --include="src/open-data/dataset-examples/EA-Cost-FOCUS_1.0.csv,src/open-data/dataset-examples/EA-Prices.csv" --exclude=""
+
       - name: Check the replacement confirmation
         shell: pwsh
         run: |
