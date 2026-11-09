@@ -5,6 +5,207 @@ BeforeAll {
     . "$PSScriptRoot/../eng/Sample-Common.ps1"
 }
 
+Describe 'Checkpointed deployment stages' {
+    BeforeAll {
+        function az {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+            throw 'Azure must be mocked in deployment stage tests.'
+        }
+        function git {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+            throw 'Git must be mocked in deployment stage tests.'
+        }
+        $script:deploymentRevision = 'a' * 40
+        $script:deploymentScope = '/subscriptions/6e87e78d-fe02-4f01-bd7b-4f2157eabd5a/resourceGroups/ftk-dto-hack-s-ae46'
+        $script:deploymentOutputs = @{
+            registryName = @{ value = 'crftkdtohacksae46' }
+            registryLoginServer = @{ value = 'crftkdtohacksae46.azurecr.io' }
+            keyVaultName = @{ value = 'kv-ftk-dto-hack-s-ae46' }
+            containerAppName = @{ value = 'ca-ftk-dto-hack-s-ae46' }
+            applicationInsightsResourceId = @{ value = "$script:deploymentScope/providers/Microsoft.Insights/components/appi-ftk-dto-hack-s-ae46" }
+            workspaceCustomerId = @{ value = '00000000-0000-0000-0000-000000000001' }
+            fqdn = @{ value = 'ca-ftk-dto-hack-s-ae46.synthetic.eastus2.azurecontainerapps.io' }
+        }
+        $script:stageScript = "$PSScriptRoot/../eng/Deploy-Sample.ps1"
+    }
+    BeforeEach {
+        $script:savedEnvironment = @{}
+        $environment = @{
+            GITHUB_ACTIONS = 'true'; GITHUB_REPOSITORY = 'bobjac/finops-toolkit'
+            GITHUB_REF = 'refs/heads/dev'; GITHUB_RUN_ID = '1234'; GITHUB_RUN_ATTEMPT = '2'
+            SAMPLE_PRICE_EVIDENCE = (@{
+                currency = 'USD'; region = 'eastus2'; model = 'gpt-5-mini'
+                modelVersion = '2025-08-07'; deploymentSku = 'GlobalStandard'
+                verifiedAt = [DateTimeOffset]::UtcNow.ToString('o')
+                inputPerMillion = 1; cachedInputPerMillion = 1; outputPerMillion = 1; analyticsPerGB = 1
+                sourceUrls = @('https://prices.azure.com/model', 'https://prices.azure.com/analytics')
+            } | ConvertTo-Json)
+        }
+        foreach ($name in $environment.Keys) {
+            $script:savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+            [Environment]::SetEnvironmentVariable($name, $environment[$name])
+        }
+        $script:azureCalls = [Collections.Generic.List[string]]::new()
+        $script:storedToken = 'synthetic-token-not-for-artifacts-' * 2
+        $script:secretExists = $true
+        $script:readyRevision = 'approved-revision'
+        $script:liveImage = "crftkdtohacksae46.azurecr.io/sample:$script:deploymentRevision"
+        $script:checkpoint = @{
+            version = 1; stage = 'Infrastructure'; revision = $script:deploymentRevision
+            runId = '1234'; runAttempt = '1'; status = 'Completed'
+            subscriptionId = '6e87e78d-fe02-4f01-bd7b-4f2157eabd5a'
+            resourceGroup = 'ftk-dto-hack-s-ae46'; outputs = $script:deploymentOutputs
+        }
+        $script:stageParameters = @{
+            Revision = $script:deploymentRevision
+            DeployerObjectId = [Guid]'00000000-0000-0000-0000-000000000001'
+            ConfirmResourceGroup = 'ftk-dto-hack-s-ae46'
+            OutputDirectory = "$TestDrive/evidence"
+        }
+        Mock git { $global:LASTEXITCODE = 0; return $script:deploymentRevision }
+        Mock az {
+            $global:LASTEXITCODE = 0
+            $operation = ($Arguments | Select-Object -First 3) -join ' '
+            $script:azureCalls.Add($operation)
+            $result = switch ($Arguments[0]) {
+                'account' { @{
+                    id = '6e87e78d-fe02-4f01-bd7b-4f2157eabd5a'
+                    tenantId = '3670e846-58dd-4658-86fb-00e4029045d6'
+                } }
+                'group' {
+                    if ($Arguments[1] -eq 'exists') { $true }
+                    else { @{
+                        name = 'ftk-dto-hack-s-ae46'
+                        tags = @{ repository = 'bobjac/finops-toolkit'; 'ftk-tool' = 'design-time-optimizer-sample' }
+                    } }
+                }
+                'deployment' {
+                    if ($Arguments[2] -eq 'what-if') { @{
+                        status = 'Succeeded'
+                        changes = @(@{ resourceId = "$script:deploymentScope/providers/Microsoft.App/containerApps/ca-ftk-dto-hack-s-ae46"; changeType = 'Modify' })
+                    } }
+                    else { @{ properties = @{ outputs = $script:deploymentOutputs } } }
+                }
+                'acr' { @{ status = 'Succeeded' } }
+                'keyvault' {
+                    switch ($Arguments[2]) {
+                        'list' { if ($script:secretExists) { @('sample-api-token') } else { @() } }
+                        'show' { @{ value = $script:storedToken } }
+                        'set' {
+                            $file = $Arguments[[Array]::IndexOf($Arguments, '--file') + 1]
+                            $script:storedToken = [IO.File]::ReadAllText($file)
+                            @{ id = 'synthetic-secret-id' }
+                        }
+                    }
+                }
+                'containerapp' { @{ properties = @{
+                    latestRevisionName = 'approved-revision'; latestReadyRevisionName = $script:readyRevision
+                    template = @{ containers = @(@{ image = $script:liveImage }) }
+                    configuration = @{ ingress = @{ fqdn = $script:deploymentOutputs.fqdn.value } }
+                } } }
+                default { throw "Unexpected mocked Azure operation: $operation." }
+            }
+            ConvertTo-Json -InputObject $result -Depth 12 -Compress
+        }
+    }
+    AfterEach {
+        foreach ($name in $script:savedEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $script:savedEnvironment[$name])
+        }
+    }
+    It 'completes infrastructure without building images or reading secrets' {
+        . $script:stageScript @script:stageParameters -Stage Infrastructure
+        $report = Get-Content "$TestDrive/evidence/deployment-infrastructure.json" -Raw | ConvertFrom-Json
+        $report.status | Should -Be 'Completed'
+        $script:azureCalls.IndexOf('deployment sub what-if') | Should -BeLessThan $script:azureCalls.IndexOf('deployment sub create')
+        ($script:azureCalls -join '|') | Should -Not -Match 'acr|keyvault'
+        Should -Invoke az -Times 1 -Exactly -ParameterFilter {
+            $Arguments[0] -eq 'deployment' -and $Arguments[2] -eq 'create' -and 'isPlaceholder=true' -in $Arguments
+        }
+    }
+    It 'retries the image stage using a prior attempt checkpoint without repeating infrastructure' {
+        $script:checkpoint | ConvertTo-Json -Depth 12 | Set-Content "$TestDrive/prerequisite.json"
+        . $script:stageScript @script:stageParameters -Stage Image -CheckpointPath "$TestDrive/prerequisite.json"
+        $report = Get-Content "$TestDrive/evidence/deployment-image.json" -Raw | ConvertFrom-Json
+        $report.status | Should -Be 'Completed'
+        $report.image | Should -Be $script:liveImage
+        ($script:azureCalls -join '|') | Should -Not -Match 'deployment|keyvault'
+        Should -Invoke az -Times 1 -Exactly -ParameterFilter {
+            $Arguments[0] -eq 'acr' -and $Arguments[1] -eq 'build' -and "sample:$script:deploymentRevision" -in $Arguments
+        }
+    }
+    It 'deploys only the approved image and reuses the token without exporting it' {
+        $script:checkpoint.stage = 'Image'
+        $script:checkpoint.image = $script:liveImage
+        $script:checkpoint | ConvertTo-Json -Depth 12 | Set-Content "$TestDrive/prerequisite.json"
+        . $script:stageScript @script:stageParameters -Stage Application -CheckpointPath "$TestDrive/prerequisite.json"
+        $json = Get-Content "$TestDrive/evidence/deployment-application.json" -Raw
+        ($json | ConvertFrom-Json).status | Should -Be 'Completed'
+        $json | Should -Not -BeLike "*$script:storedToken*"
+        ($script:azureCalls -join '|') | Should -Not -Match 'acr|keyvault secret set'
+        Should -Invoke az -Times 1 -Exactly -ParameterFilter {
+            $Arguments[0] -eq 'deployment' -and $Arguments[2] -eq 'create' -and
+            'isPlaceholder=false' -in $Arguments -and "containerImage=$script:liveImage" -in $Arguments
+        }
+    }
+    It 'rejects stale, foreign, failed, and out-of-order checkpoints before Azure calls' {
+        foreach ($invalid in @(
+            @{ revision = ('b' * 40) }, @{ runId = 'other-run' }, @{ stage = 'Application' },
+            @{ status = 'Running' }, @{ resourceGroup = 'ftk-dto-hack-foundation' },
+            @{ outputs = @{ registryName = @{ value = 'foreign-registry' } } }
+        )) {
+            $copy = $script:checkpoint | ConvertTo-Json -Depth 12 | ConvertFrom-Json -AsHashtable
+            foreach ($name in $invalid.Keys) { $copy[$name] = $invalid[$name] }
+            $copy | ConvertTo-Json -Depth 12 | Set-Content "$TestDrive/prerequisite.json"
+            { . $script:stageScript @script:stageParameters -Stage Image -CheckpointPath "$TestDrive/prerequisite.json" } | Should -Throw '*checkpoint*'
+        }
+        $copy = $script:checkpoint | ConvertTo-Json -Depth 12 | ConvertFrom-Json -AsHashtable
+        $copy.stage = 'Image'
+        $copy.image = 'foreign-registry.azurecr.io/sample:latest'
+        $copy | ConvertTo-Json -Depth 12 | Set-Content "$TestDrive/prerequisite.json"
+        { . $script:stageScript @script:stageParameters -Stage Application -CheckpointPath "$TestDrive/prerequisite.json" } | Should -Throw '*checkpoint image*'
+        $script:azureCalls.Count | Should -Be 0
+        $report = Get-Content "$TestDrive/evidence/deployment-image.json" -Raw | ConvertFrom-Json
+        $report.status | Should -Be 'FailedResourcesMayBeRetained'
+    }
+    It 'refuses validation against a placeholder without modifying Azure or calling the API' {
+        $script:checkpoint.stage = 'Application'
+        $script:checkpoint.image = $script:liveImage
+        $script:liveImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+        $script:checkpoint | ConvertTo-Json -Depth 12 | Set-Content "$TestDrive/prerequisite.json"
+        { . $script:stageScript @script:stageParameters -Stage Validation -CheckpointPath "$TestDrive/prerequisite.json" } | Should -Throw '*approved image*'
+        ($script:azureCalls -join '|') | Should -Not -Match 'deployment|acr|keyvault'
+        $report = Get-Content "$TestDrive/evidence/deployment-validation.json" -Raw | ConvertFrom-Json
+        $report.status | Should -Be 'FailedResourcesMayBeRetained'
+        $report.liveVerified | Should -Not -BeTrue
+    }
+    It 'bounds readiness to the new revision and never creates a token during validation' {
+        Mock Start-Sleep {}
+        $script:checkpoint.stage = 'Application'
+        $script:checkpoint.image = $script:liveImage
+        $script:checkpoint | ConvertTo-Json -Depth 12 | Set-Content "$TestDrive/prerequisite.json"
+        $script:readyRevision = 'old-ready-revision'
+        { . $script:stageScript @script:stageParameters -Stage Validation -CheckpointPath "$TestDrive/prerequisite.json" } | Should -Throw '*revision did not become ready*'
+        Should -Invoke az -Times 30 -Exactly -ParameterFilter { $Arguments[0] -eq 'containerapp' }
+        Should -Invoke az -Times 0 -Exactly -ParameterFilter { $Arguments[0] -eq 'keyvault' }
+        $script:readyRevision = 'approved-revision'
+        $script:secretExists = $false
+        { . $script:stageScript @script:stageParameters -Stage Validation -CheckpointPath "$TestDrive/prerequisite.json" } | Should -Throw '*Complete the application stage*'
+        ($script:azureCalls -join '|') | Should -Not -Match 'deployment|acr|keyvault secret set'
+        Test-Path "$TestDrive/evidence/api-token.private" | Should -BeFalse
+    }
+    It 'creates a missing token only in application setup and removes its private file' {
+        $script:secretExists = $false
+        New-Item -ItemType Directory -Path "$TestDrive/evidence" -Force | Out-Null
+        { Get-SampleApiToken -VaultName 'kv-ftk-dto-hack-s-ae46' -OutputDirectory "$TestDrive/evidence" } | Should -Throw '*Complete the application stage*'
+        $token = Get-SampleApiToken -VaultName 'kv-ftk-dto-hack-s-ae46' -OutputDirectory "$TestDrive/evidence" -CreateIfMissing
+        $token | Should -Be $script:storedToken
+        $token.Length | Should -BeGreaterOrEqual 32
+        Test-Path "$TestDrive/evidence/api-token.private" | Should -BeFalse
+        Should -Invoke az -Times 1 -Exactly -ParameterFilter { $Arguments[2] -eq 'set' }
+    }
+}
+
 Describe 'Sample ownership and price preflight' {
     It 'retries a cold-start timeout but bounds retries and refuses offline readiness' {
         $script:readinessCalls = 0

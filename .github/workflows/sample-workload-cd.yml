@@ -47,11 +47,14 @@ jobs:
           SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
         run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs
 
-  deploy:
+  infrastructure:
+    name: Provision infrastructure
     needs: gate
     runs-on: ubuntu-latest
     environment: sandbox
-    timeout-minutes: 90
+    timeout-minutes: 20
+    outputs:
+      checkpoint: sample-infrastructure-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
       actions: read
@@ -74,7 +77,7 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Deploy and verify the independently owned sample
+      - name: Preview and provision the independently owned infrastructure
         shell: pwsh
         env:
           SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
@@ -82,15 +85,188 @@ jobs:
           SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
         run: |
           ./hack/sample-multi-agent-workload/eng/Deploy-Sample.ps1 `
+            -Stage Infrastructure `
             -Revision $env:SOURCE_REVISION `
             -DeployerObjectId $env:SAMPLE_DEPLOYER_OBJECT_ID `
             -ConfirmResourceGroup ftk-dto-hack-s-ae46 `
             -OutputDirectory "$env:RUNNER_TEMP/sample-evidence"
-      - name: Retain nonsecret deployment and live validation evidence
+      - name: Retain the nonsecret infrastructure checkpoint
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: sample-deployment-${{ github.run_id }}
+          name: sample-infrastructure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sample-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  image:
+    name: Build image
+    needs: infrastructure
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 20
+    outputs:
+      checkpoint: sample-image-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Verify actual approval and current revision before Azure sign-in
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --require-approval
+      - name: Download the completed infrastructure checkpoint
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.infrastructure.outputs.checkpoint }}
+          path: ${{ runner.temp }}/sample-prerequisite
+      - name: Sign in to Azure with sandbox identity
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build the approved revision in Container Registry
+        shell: pwsh
+        env:
+          SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+          SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          ./hack/sample-multi-agent-workload/eng/Deploy-Sample.ps1 `
+            -Stage Image `
+            -Revision $env:SOURCE_REVISION `
+            -DeployerObjectId $env:SAMPLE_DEPLOYER_OBJECT_ID `
+            -ConfirmResourceGroup ftk-dto-hack-s-ae46 `
+            -CheckpointPath "$env:RUNNER_TEMP/sample-prerequisite/deployment-infrastructure.json" `
+            -OutputDirectory "$env:RUNNER_TEMP/sample-evidence"
+      - name: Retain the nonsecret image checkpoint
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sample-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sample-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  application:
+    name: Deploy application
+    needs: image
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 20
+    outputs:
+      checkpoint: sample-application-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Verify actual approval and current revision before Azure sign-in
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --require-approval
+      - name: Download the completed image checkpoint
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.image.outputs.checkpoint }}
+          path: ${{ runner.temp }}/sample-prerequisite
+      - name: Sign in to Azure with sandbox identity
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Reuse or create the API token and activate the approved image
+        shell: pwsh
+        env:
+          SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+          SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          ./hack/sample-multi-agent-workload/eng/Deploy-Sample.ps1 `
+            -Stage Application `
+            -Revision $env:SOURCE_REVISION `
+            -DeployerObjectId $env:SAMPLE_DEPLOYER_OBJECT_ID `
+            -ConfirmResourceGroup ftk-dto-hack-s-ae46 `
+            -CheckpointPath "$env:RUNNER_TEMP/sample-prerequisite/deployment-image.json" `
+            -OutputDirectory "$env:RUNNER_TEMP/sample-evidence"
+      - name: Retain the nonsecret application checkpoint
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sample-application-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sample-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  validation:
+    name: Verify live behavior and telemetry
+    needs: application
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Verify actual approval and current revision before Azure sign-in
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --require-approval
+      - name: Download the completed application checkpoint
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.application.outputs.checkpoint }}
+          path: ${{ runner.temp }}/sample-prerequisite
+      - name: Sign in to Azure with sandbox identity
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify live readiness, golden cases, usage, and trace correlation
+        shell: pwsh
+        env:
+          SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+          SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          ./hack/sample-multi-agent-workload/eng/Deploy-Sample.ps1 `
+            -Stage Validation `
+            -Revision $env:SOURCE_REVISION `
+            -DeployerObjectId $env:SAMPLE_DEPLOYER_OBJECT_ID `
+            -ConfirmResourceGroup ftk-dto-hack-s-ae46 `
+            -CheckpointPath "$env:RUNNER_TEMP/sample-prerequisite/deployment-application.json" `
+            -OutputDirectory "$env:RUNNER_TEMP/sample-evidence"
+      - name: Retain nonsecret live validation evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sample-validation-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sample-evidence/*.json
           if-no-files-found: warn
           retention-days: 7

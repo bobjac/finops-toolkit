@@ -77,7 +77,7 @@ The live container additionally requires `AZURE_CLIENT_ID`, `AZURE_OPENAI_ENDPOI
 
 The root [sample CI](../../.github/workflows/sample-workload-ci.yml) checks formatting, lint, strict types, Python tests, deployment eligibility, ownership/price preflight, Bicep, the Linux container, and offline golden evaluation. In-memory exporter tests use a mocked HTTP provider: they verify the real SDK adapter and tracing logic, not actual Azure access.
 
-The root [sample CD](../../.github/workflows/sample-workload-cd.yml) follows successful trusted `dev` push CI. It rejects stale revisions, PR runs, foreign repositories, missing required-reviewer protection, and missing approval for the actual sandbox workflow run. It rechecks before Azure sign-in, then uses sandbox OIDC. It never configures reviewers or bypasses environment protection.
+The root [sample CD](../../.github/workflows/sample-workload-cd.yml) follows successful trusted `dev` push CI. It rejects stale revisions, PR runs, foreign repositories, missing required-reviewer protection, and missing approval for the actual sandbox workflow run. Each stage rechecks before a fresh Azure OIDC sign-in. It never configures reviewers or bypasses environment protection.
 
 After enabling Actions and saving the sandbox protection rules, push a new `dev` commit that changes the sample, its workflows, or the sandbox configuration. Successful push CI starts CD, which waits for sandbox approval before signing in to Azure. Manually running sample CI validates the code but does not start deployment. The CD workflow's manual **Run workflow** action is for sample removal only.
 
@@ -96,7 +96,20 @@ Before paid deployment, an administrator must resolve Actions availability and c
 
 Do not use Platform, Basic, or Auxiliary logging meters as substitutes for Analytics ingestion. The partial infrastructure estimate is approximately USD 5.82/month at one active hour/day before shared grants, plus unverified ingestion, inference, retention, and transfer charges. The USD 300 ceiling and configured expiration are declarations; they do not enforce a billing cap or remove resources.
 
-The directory-local `eng/Deploy-Sample.ps1` previews each Bicep phase before applying it and rejects deletion, unsupported changes, and changes outside the owned sample group. It generates or reuses the protected access token, builds the exact revision through ACR, activates the live image, and calls `eng/Collect-Evidence.ps1`. Collection independently checks the golden cases, per-agent model identity and measured input/output/cached usage, and queried Application Insights correlation. Deployment and removal reject accounts outside the approved subscription and tenant. Change the plan and account guard together before targeting another sandbox. Nonsecret reports are retained as workflow artifacts. No FinOps hub or load-testing resource is required.
+CD runs four sequential jobs, each on a fresh runner with its own sandbox approval, Azure sign-in, logs, timeout, and nonsecret checkpoint:
+
+| Job | Work | Timeout |
+| --- | --- | --- |
+| Provision infrastructure | Preview and apply bootstrap Bicep | 20 minutes |
+| Build image | Build the exact revision through ACR | 20 minutes |
+| Deploy application | Generate or reuse the Key Vault API token, preview runtime Bicep, and activate the image | 20 minutes |
+| Verify live behavior and telemetry | Wait for the approved revision, check readiness and golden cases, and query correlated telemetry | 30 minutes |
+
+The directory-local `eng/Deploy-Sample.ps1` requires an explicit `-Stage`. Every later stage requires its completed predecessor's checkpoint, bound to the same workflow run, revision, subscription, owned resources, and image. Tokens stay in Key Vault and are never passed through artifacts or job outputs. Artifact names include the run attempt, so a retry cannot collide with an earlier artifact.
+
+To retry a failed stage, select **Re-run failed jobs** on that workflow run and approve sandbox when prompted. Successful jobs and their checkpoints are reused; the failed job and its dependent jobs run again. Don't select **Re-run all jobs** unless you intend to repeat bootstrap. If `dev` has moved or a checkpoint has expired, push a new sample-related revision and use its new CI/CD run instead. No earlier run's checkpoint is accepted.
+
+The script previews each Bicep phase before applying it and rejects deletion, unsupported changes, and changes outside the owned sample group. Only the validation stage calls `eng/Collect-Evidence.ps1`, which independently checks the golden cases, per-agent model identity and measured input/output/cached usage, and queried Application Insights correlation. Validation doesn't rebuild the image, reapply bootstrap, or replace the token. Deployment and removal reject accounts outside the approved subscription and tenant. Change the plan and account guard together before targeting another sandbox. Nonsecret stage reports and live evidence are retained as workflow artifacts for seven days. Deployment acceptance requires all four jobs to succeed. No FinOps hub or load-testing resource is required.
 
 Successful resources are retained. Failed deployments may also retain resources; failures never automatically delete a previously successful group. To remove only `ftk-dto-hack-s-ae46`, manually dispatch **Sample workload CD** on `dev`, enter that exact confirmation, and approve the sandbox environment. `eng/Remove-Sample.ps1` verifies ownership before deletion and supports `-WhatIf`. Foundation resources are excluded.
 

@@ -5,8 +5,11 @@ $ErrorActionPreference = 'Stop'
 
 function Invoke-SampleAz {
     param([Parameter(Mandatory)][string[]]$Arguments)
+    $operation = ($Arguments | Select-Object -First 3) -join ' '
+    Write-Information "Azure CLI started: $operation" -InformationAction Continue
     $result = & az @Arguments --only-show-errors --output json
-    if ($LASTEXITCODE -ne 0) { throw "Azure CLI failed: $($Arguments[0])." }
+    if ($LASTEXITCODE -ne 0) { throw "Azure CLI failed: $operation." }
+    Write-Information "Azure CLI completed: $operation" -InformationAction Continue
     if ($result) { return (($result -join "`n") | ConvertFrom-Json) }
 }
 
@@ -52,6 +55,81 @@ function Assert-SampleOwnership {
         $Group.tags.'ftk-tool' -ne 'design-time-optimizer-sample') {
         throw 'The resource group is not the independently owned sample. Refusing changes.'
     }
+}
+
+function Assert-SampleCheckpoint {
+    param(
+        [Parameter(Mandatory)]$Checkpoint,
+        [Parameter(Mandatory)][string]$Revision,
+        [Parameter(Mandatory)][string]$RunId,
+        [Parameter(Mandatory)][string]$PreviousStage,
+        [Parameter(Mandatory)][string]$Scope
+    )
+    if ($Checkpoint.version -ne 1 -or $Checkpoint.revision -cne $Revision -or
+        $Checkpoint.runId -cne $RunId -or $Checkpoint.stage -cne $PreviousStage -or
+        $Checkpoint.status -cne 'Completed' -or
+        $Checkpoint.subscriptionId -ne '6e87e78d-fe02-4f01-bd7b-4f2157eabd5a' -or
+        $Checkpoint.resourceGroup -ne 'ftk-dto-hack-s-ae46') {
+        throw 'The checkpoint must be a completed prerequisite from this workflow run and revision.'
+    }
+    $expected = @{
+        registryName = 'crftkdtohacksae46'
+        registryLoginServer = 'crftkdtohacksae46.azurecr.io'
+        keyVaultName = 'kv-ftk-dto-hack-s-ae46'
+        containerAppName = 'ca-ftk-dto-hack-s-ae46'
+        applicationInsightsResourceId = "$Scope/providers/Microsoft.Insights/components/appi-ftk-dto-hack-s-ae46"
+    }
+    foreach ($name in $expected.Keys) {
+        if ($Checkpoint.outputs.$name.value -ne $expected[$name]) {
+            throw "The checkpoint does not match the owned sample resource: $name."
+        }
+    }
+    $workspaceId = [Guid]::Empty
+    if (-not [Guid]::TryParse([string]$Checkpoint.outputs.workspaceCustomerId.value, [ref]$workspaceId) -or
+        $workspaceId -eq [Guid]::Empty -or
+        $Checkpoint.outputs.fqdn.value -notlike 'ca-ftk-dto-hack-s-ae46.*.eastus2.azurecontainerapps.io') {
+        throw 'The checkpoint workspace or application endpoint is invalid.'
+    }
+    if ($PreviousStage -ne 'Infrastructure' -and
+        $Checkpoint.image -cne "crftkdtohacksae46.azurecr.io/sample:$Revision") {
+        throw 'The checkpoint image does not match the approved revision.'
+    }
+}
+
+function Get-SampleApiToken {
+    param(
+        [Parameter(Mandatory)][string]$VaultName,
+        [Parameter(Mandatory)][string]$OutputDirectory,
+        [switch]$CreateIfMissing
+    )
+    $secretExists = Invoke-SampleAz @('keyvault', 'secret', 'list', '--vault-name', $VaultName,
+        '--query', "[?name=='sample-api-token'].name")
+    if ($secretExists) {
+        $secret = Invoke-SampleAz @('keyvault', 'secret', 'show', '--vault-name', $VaultName,
+            '--name', 'sample-api-token')
+        $token = $secret.value
+    }
+    elseif ($CreateIfMissing) {
+        $token = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+        Write-Information "::add-mask::$token" -InformationAction Continue
+        $tokenFile = Join-Path $OutputDirectory 'api-token.private'
+        try {
+            [IO.File]::WriteAllText($tokenFile, $token)
+            Invoke-SampleAz @('keyvault', 'secret', 'set', '--vault-name', $VaultName,
+                '--name', 'sample-api-token', '--file', $tokenFile) | Out-Null
+        }
+        finally {
+            if (Test-Path -LiteralPath $tokenFile) { Remove-Item -LiteralPath $tokenFile -Force }
+        }
+    }
+    else {
+        throw 'The API token is missing. Complete the application stage before live validation.'
+    }
+    if ($token -isnot [string] -or $token.Length -lt 32) {
+        throw 'The stored API token is invalid. Refusing to replace it automatically.'
+    }
+    Write-Information "::add-mask::$token" -InformationAction Continue
+    return $token
 }
 
 function Wait-SampleReady {
