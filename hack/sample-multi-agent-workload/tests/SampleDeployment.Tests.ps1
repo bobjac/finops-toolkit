@@ -207,6 +207,31 @@ Describe 'Checkpointed deployment stages' {
 }
 
 Describe 'Sample ownership and price preflight' {
+    It 'reports failed live requests without exposing response payloads' {
+        Mock Wait-SampleReady {}
+        Mock Invoke-RestMethod {
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::UnprocessableEntity)
+            $exception = [Microsoft.PowerShell.Commands.HttpResponseException]::new('Synthetic HTTP failure.', $response)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception, 'SyntheticLiveFailure', [System.Management.Automation.ErrorCategory]::InvalidOperation, $null)
+            $errorRecord.ErrorDetails = [System.Management.Automation.ErrorDetails]::new(
+                '{"generatedSql":"private-generated-sql","rows":["private-row"],"token":"private-token"}')
+            throw $errorRecord
+        }
+        $parameters = @{
+            BaseUri = [Uri]'https://sample.azurecontainerapps.io'
+            ApiToken = 'private-token'
+            ApplicationInsightsResourceId = '/subscriptions/synthetic/providers/Microsoft.Insights/components/sample'
+            WorkspaceCustomerId = [Guid]'00000000-0000-0000-0000-000000000001'
+            OutputDirectory = $TestDrive
+        }
+        $failure = {
+            . "$PSScriptRoot/../eng/Collect-Evidence.ps1" @parameters
+        } | Should -Throw -PassThru -ExpectedMessage 'Live question request failed: category-revenue (HTTP 422).'
+        ($failure | Out-String) | Should -Not -Match 'private-generated-sql|private-row|private-token'
+        Test-Path "$TestDrive/live-evaluation.json" | Should -BeFalse
+        Should -Invoke Invoke-RestMethod -Times 1 -Exactly
+    }
     It 'retries a cold-start timeout but bounds retries and refuses offline readiness' {
         $script:readinessCalls = 0
         $script:readinessMode = 'cold-start'

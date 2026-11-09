@@ -57,6 +57,28 @@ def test_parameter_binding_treats_injection_as_data(store: Store) -> None:
     ).rows == [[6]]
 
 
+def test_iso_date_filters_work_without_unapproved_functions(store: Store) -> None:
+    parameters = {"start": "2026-09-01", "end": "2026-10-01"}
+    with pytest.raises(QueryRejected, match="unapproved operation"):
+        store.query(
+            QueryPlan(
+                sql="""SELECT COUNT(*) FROM orders
+                    WHERE date(order_date) >= date(:start) AND date(order_date) < date(:end)""",
+                parameters=parameters,
+            ),
+            frozenset({"orders"}),
+        )
+    result = store.query(
+        QueryPlan(
+            sql="""SELECT COUNT(*) FROM orders
+                WHERE order_date >= :start AND order_date < :end""",
+            parameters=parameters,
+        ),
+        frozenset({"orders"}),
+    )
+    assert result.rows == [[6]]
+
+
 def test_row_limit_does_not_return_a_partial_answer(store: Store) -> None:
     limited = Store(store.path, row_limit=1)
     with pytest.raises(QueryFailed, match="no partial answer"):

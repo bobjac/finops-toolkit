@@ -18,13 +18,23 @@ from sample_workload.agents import Coordinator
 from sample_workload.api import create_app
 from sample_workload.azure_model import AzureModel
 from sample_workload.contracts import QueryPlan, Question
-from sample_workload.database import Store, initialize
+from sample_workload.database import FUNCTIONS, Store, initialize
 from sample_workload.model import DeterministicModel
 
 
 @pytest.mark.parametrize(
     "failure",
-    [None, "uncached", "provider", "contract", "schema-contract", "truncated", "empty", "refusal"],
+    [
+        None,
+        "uncached",
+        "provider",
+        "contract",
+        "schema-contract",
+        "truncated",
+        "empty",
+        "refusal",
+        "unapproved-function",
+    ],
 )
 def test_live_sdk_usage_correlation_privacy_and_failure(
     tmp_path: Path,
@@ -56,6 +66,9 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
                     "inventory",
                 ]
             if role == "sql-agent":
+                instructions = payload["messages"][0]["content"]
+                assert f'"allowedFunctions": {json.dumps(sorted(FUNCTIONS))}' in instructions
+                assert "compare date columns and bound parameters directly" in instructions
                 assert schema["properties"]["parameters"] == {
                     "type": "object",
                     "properties": {},
@@ -82,6 +95,10 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
                 ("schema-contract", "schema-agent"),
             }:
                 content = '{"private-database-row":"private-provider-prompt-secret"}'
+            if failure == "unapproved-function" and role == "sql-agent":
+                content = json.dumps(
+                    {"sql": "SELECT date(updated_at) FROM inventory", "parameters": {}}
+                )
             return httpx.Response(
                 200,
                 json={
@@ -191,6 +208,10 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
             db_span = next(span for span in spans if span.name == "db.query")
             assert sql_span.context is not None and db_span.parent is not None
             assert db_span.parent.span_id == sql_span.context.span_id
+        elif failure == "unapproved-function":
+            assert result.answer_status == "query-rejected"
+            assert result.data.rows == []
+            assert calls == ["coordinator", "schema-agent", "sql-agent"]
         else:
             assert result.answer_status == "dependency-failed"
             assert result.data.rows == []

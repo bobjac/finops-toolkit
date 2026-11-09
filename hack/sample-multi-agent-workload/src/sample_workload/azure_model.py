@@ -9,6 +9,7 @@ from openai import APIError, AsyncAzureOpenAI
 from pydantic import BaseModel
 
 from .contracts import Analysis, Classification, ModelUsage, QueryPlan, SchemaContext
+from .database import FUNCTIONS
 from .model import QUERIES, QUESTIONS, SCOPES, ModelDependencyError, ModelResponse
 
 CONTRACTS: dict[str, type[BaseModel]] = {
@@ -26,6 +27,9 @@ for unsupported questions and shipment-delay-cause for unrecorded carrier delay 
 Schema agent: return exactly the approved tables for the classified pattern.
 SQL agent: generate one SQLite SELECT, with named bound parameters, no CTEs or writes.
 Use the parameter names in the output contract, the supplied schema, and only the approved tables.
+Only call functions in allowedFunctions; all other functions are denied by the database.
+Dates are stored as ISO YYYY-MM-DD text: compare date columns and bound parameters directly,
+without date(), strftime(), or casts. Use julianday() only for elapsed-day calculations.
 Revenue is SUM(quantity * unit_price)
 for September 2026, grouped by category, descending revenue then category, top five.
 Inventory compares on_hand_quantity < reorder_point, ordered by product_id.
@@ -79,6 +83,8 @@ class AzureModel:
             "catalog": QUESTIONS,
             "scopes": SCOPES,
         }
+        if role == "sql-agent":
+            instructions["allowedFunctions"] = sorted(FUNCTIONS)
         try:
             result = await self.client.chat.completions.create(
                 model=self.deployment,

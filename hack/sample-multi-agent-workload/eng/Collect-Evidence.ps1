@@ -22,9 +22,15 @@ foreach ($case in $golden) {
         question = $case.question; sessionId = "h05-$([Guid]::NewGuid())"
         experimentId = 'h05-live'; variant = 'baseline'
     } | ConvertTo-Json
-    $answer = Invoke-RestMethod -Uri "$($BaseUri.AbsoluteUri.TrimEnd('/'))/api/questions" `
-        -Method Post -ContentType 'application/json' -Body $body `
-        -Headers @{ 'x-sample-token' = $ApiToken } -TimeoutSec 230
+    try {
+        $answer = Invoke-RestMethod -Uri "$($BaseUri.AbsoluteUri.TrimEnd('/'))/api/questions" `
+            -Method Post -ContentType 'application/json' -Body $body `
+            -Headers @{ 'x-sample-token' = $ApiToken } -TimeoutSec 230
+    }
+    catch [Microsoft.PowerShell.Commands.HttpResponseException] {
+        $status = [int]$_.Exception.Response.StatusCode
+        throw "Live question request failed: $($case.id) (HTTP $status)."
+    }
     Assert-SampleAnswer -Case $case -Answer $answer
     if (-not $answer.evidence.modelUsage -or $answer.evidence.modelMode -ne 'azure-openai' -or
         $answer.evidence.traceId -notmatch '^[a-f0-9]{32}$') {
