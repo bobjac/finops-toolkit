@@ -1,5 +1,6 @@
 param deployerObjectId string
 param runtimePrincipalId string
+param runtimeIdentityResourceId string
 param registryName string
 param openAiName string
 param keyVaultName string
@@ -22,7 +23,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
 }
 
 resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, runtimePrincipalId, 'AcrPull')
+  name: guid(registry.id, runtimeIdentityResourceId, 'AcrPull')
   scope: registry
   properties: {
     principalId: runtimePrincipalId
@@ -32,7 +33,7 @@ resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 resource openAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(openAi.id, runtimePrincipalId, 'OpenAIUser')
+  name: guid(openAi.id, runtimeIdentityResourceId, 'OpenAIUser')
   scope: openAi
   properties: {
     principalId: runtimePrincipalId
@@ -42,7 +43,7 @@ resource openAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 resource keyVaultUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, runtimePrincipalId, 'KeyVaultSecretsUser')
+  name: guid(keyVault.id, runtimeIdentityResourceId, 'KeyVaultSecretsUser')
   scope: keyVault
   properties: {
     principalId: runtimePrincipalId
@@ -52,7 +53,7 @@ resource keyVaultUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 resource metricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(appInsights.id, runtimePrincipalId, 'MonitoringMetricsPublisher')
+  name: guid(appInsights.id, runtimeIdentityResourceId, 'MonitoringMetricsPublisher')
   scope: appInsights
   properties: {
     principalId: runtimePrincipalId

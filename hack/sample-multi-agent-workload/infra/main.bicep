@@ -27,6 +27,8 @@ param optimizationVariant string = 'baseline'
 @description('Expiration date for sandbox resources.')
 param expiresOn string = '2026-12-31'
 
+var runtimeIdentityName = 'id-ftk-dto-hack-s-ae46'
+
 var tags = {
   'ftk-tool': 'design-time-optimizer-sample'
   'ftk-workload': 'contoso-outdoor-agent'
@@ -53,7 +55,7 @@ module identity 'modules/identity.bicep' = {
   name: 'identity'
   scope: resourceGroup
   params: {
-    name: 'id-ftk-dto-hack-s-ae46'
+    name: runtimeIdentityName
     location: location
     tags: tags
   }
@@ -148,6 +150,7 @@ module roleAssignments 'modules/role-assignments.bicep' = {
   params: {
     deployerObjectId: deployerObjectId
     runtimePrincipalId: identity.outputs.principalId
+    runtimeIdentityResourceId: resourceId(subscription().subscriptionId, resourceGroup.name, 'Microsoft.ManagedIdentity/userAssignedIdentities', runtimeIdentityName)
     registryName: registry.outputs.name
     openAiName: 'oai-ftk-dto-hack-s-ae46'
     keyVaultName: keyVault.outputs.name

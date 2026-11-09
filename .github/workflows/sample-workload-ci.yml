@@ -68,7 +68,24 @@ jobs:
           if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Sample lifecycle lint failed.' }
 
       - name: Validate sample infrastructure
-        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+        run: |
+          az bicep build --file infra/main.bicep --stdout > "$RUNNER_TEMP/sample-template.json"
+          python3 - "$RUNNER_TEMP/sample-template.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1]) as source:
+              template = json.load(source)
+          roles = next(resource for resource in template["resources"] if resource["name"] == "roleAssignments")
+          assignments = roles["properties"]["template"]["resources"]
+          runtime = [role for role in assignments if role["properties"]["principalId"] == "[parameters('runtimePrincipalId')]"]
+          assert len(runtime) == 4
+          for role in runtime:
+              assert "runtimeIdentityResourceId" in role["name"]
+              assert "runtimePrincipalId" not in role["name"] and "reference(" not in role["name"]
+          identity_id = roles["properties"]["parameters"]["runtimeIdentityResourceId"]["value"]
+          assert "resourceId(" in identity_id and "reference(" not in identity_id
+          PY
 
       - name: Build and start the explicit offline container
         run: |
