@@ -223,7 +223,7 @@ function Assert-SampleTelemetry {
     foreach ($row in $Rows) {
         $properties = $row.Properties
         if ($properties -is [string]) { $properties = $properties | ConvertFrom-Json }
-        if ($properties.'session.id' -cne $Answer.evidence.sessionHash -or
+        if ($row.SessionId -cne $Answer.evidence.sessionHash -or
             $properties.'experiment.id' -cne $Answer.evidence.experimentHash -or
             $properties.'optimization.variant' -cne 'baseline') {
             throw 'Exported experiment, variant, or session attribution is missing.'

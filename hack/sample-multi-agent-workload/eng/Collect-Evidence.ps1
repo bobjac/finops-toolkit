@@ -35,7 +35,7 @@ foreach ($case in $golden) {
 union AppRequests, AppDependencies
 | where OperationId == '$traceId'
 | where _ResourceId =~ '$ApplicationInsightsResourceId'
-| project Name, OperationId, ParentId, Id, Properties
+| project Name, OperationId, ParentId, Id, SessionId, Properties
 "@
     $telemetry = $null
     for ($attempt = 0; $attempt -lt 30; $attempt++) {

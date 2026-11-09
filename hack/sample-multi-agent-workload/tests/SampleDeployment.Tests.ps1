@@ -323,15 +323,15 @@ Describe 'Sample ownership and price preflight' {
     }
     It 'rejects exported usage and attribution that differ from provider evidence' {
         $properties = [PSCustomObject]@{
-            'session.id' = 'session-hash'; 'experiment.id' = 'experiment-hash'
+            'experiment.id' = 'experiment-hash'
             'optimization.variant' = 'baseline'
             'gen_ai.response.model' = 'gpt-5-mini'
             'agent.name' = 'coordinator'
             'gen_ai.usage.input_tokens' = 5; 'gen_ai.usage.output_tokens' = 2
         }
         $rows = @(
-            [PSCustomObject]@{ Name = 'coordinator.run'; Id = 'root'; ParentId = ''; Properties = $properties }
-            [PSCustomObject]@{ Name = 'gen_ai.chat'; Id = 'child'; ParentId = 'root'; Properties = $properties }
+            [PSCustomObject]@{ Name = 'coordinator.run'; Id = 'root'; ParentId = ''; SessionId = 'session-hash'; Properties = $properties }
+            [PSCustomObject]@{ Name = 'gen_ai.chat'; Id = 'child'; ParentId = 'root'; SessionId = 'session-hash'; Properties = $properties }
         )
         $answer = @{
             evidence = @{
@@ -357,7 +357,10 @@ Describe 'Sample ownership and price preflight' {
         $properties.'gen_ai.usage.cache_read.input_tokens' = 1
         { Assert-SampleTelemetry -Answer $answer -Rows $rows } | Should -Throw
         $properties.'gen_ai.usage.cache_read.input_tokens' = 0
-        $properties.'session.id' = 'foreign-session'
+        $rows[1].SessionId = 'foreign-session'
+        { Assert-SampleTelemetry -Answer $answer -Rows $rows } | Should -Throw
+        $rows[1].SessionId = ''
+        $properties | Add-Member 'session.id' 'session-hash'
         { Assert-SampleTelemetry -Answer $answer -Rows $rows } | Should -Throw
     }
 }
