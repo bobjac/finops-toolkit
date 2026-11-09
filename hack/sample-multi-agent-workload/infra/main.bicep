@@ -147,6 +147,10 @@ module app 'modules/container-app.bicep' = {
 module roleAssignments 'modules/role-assignments.bicep' = {
   name: 'roleAssignments'
   scope: resourceGroup
+  dependsOn: [
+    appInsights
+    openAi
+  ]
   params: {
     deployerObjectId: deployerObjectId
     runtimePrincipalId: identity.outputs.principalId

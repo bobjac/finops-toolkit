@@ -85,6 +85,8 @@ jobs:
               assert "runtimePrincipalId" not in role["name"] and "reference(" not in role["name"]
           identity_id = roles["properties"]["parameters"]["runtimeIdentityResourceId"]["value"]
           assert "resourceId(" in identity_id and "reference(" not in identity_id
+          for scope in ("appInsights", "openAi"):
+              assert any(f"'{scope}'" in dependency for dependency in roles["dependsOn"])
           PY
 
       - name: Build and start the explicit offline container
