@@ -1,21 +1,21 @@
 ---
 name: build-issue
-description: Implement one issue in bobjac/finops-toolkit when the user says "build issue N", "implement issue N", or "build the next issue". Verify dependencies, create an issue feature branch from the fork's dev, implement and validate, then commit, push, and open a fork-local PR after explicit approval.
+description: Implement one issue in bobjac/finops-toolkit when the user says "build issue N", "implement issue N", or "build the next issue". Verify dependencies, implement and validate directly on dev, then commit and push to the fork after explicit approval.
 license: MIT
 compatibility: Requires Git, authenticated GitHub CLI, repository-specific build tools, and permission for Git writes.
 ---
 
 # Build an issue in the fork
 
-Take one issue from the hack backlog to a validated feature branch and a pull request targeting `bobjac/finops-toolkit:dev`. Do not merge the PR or close the issue yourself.
+Take one issue from the hack backlog to a validated revision on `bobjac/finops-toolkit:dev`. Do not create a feature branch or PR unless explicitly requested. Close the issue only after all required evidence is verified and the user explicitly approves closure.
 
-This is the repository-specific issue workflow. Do not combine it with another issue skill that prohibits publishing or closes issues before merge.
+This is the repository-specific direct-dev workflow. It applies only to this fork and takes precedence over personal issue-workflow defaults.
 
 ## Fixed boundaries
 
-- Issue repository and PR base repository: `bobjac/finops-toolkit`.
-- Base branch and push remote: `dev` and `origin`.
-- Branch pattern: `bobjac/issue-<number>-<short-slug>`.
+- Issue repository and publication destination: `bobjac/finops-toolkit`.
+- Working branch and push remote: `dev` and `origin`.
+- No feature branches or PRs by default. If explicitly requested, use `bobjac/issue-<number>-<short-slug>` and target the fork's `dev`.
 - Upstream repository: never create issues, branches, pushes, or PRs in `microsoft/finops-toolkit`.
 - Keep the optimizer standalone. Do not introduce an autonomous harness dependency.
 - Keep credentials and `.tmp/` out of commits, issue comments, logs, and PR bodies.
@@ -41,9 +41,9 @@ gh repo view bobjac/finops-toolkit --json nameWithOwner,isFork,defaultBranchRef
 gh issue view <N> --repo bobjac/finops-toolkit --json number,title,body,state,labels,milestone,url
 ```
 
-Verify that `origin` points to `bobjac/finops-toolkit`, the PR base will be `dev`, and the selected item is an open implementation issue. Stop if the repository, branch configuration, or selected issue is inconsistent; do not silently retarget.
+Verify that `origin` points to `bobjac/finops-toolkit`, publication will target `dev`, and the selected item is an open implementation issue. Stop if the repository, branch configuration, or selected issue is inconsistent; do not silently retarget.
 
-If there are staged, modified, or untracked files, stop before switching branches and use the host's question tool to agree how to preserve them. Do not automatically stash, discard, stage, commit, or carry unrelated work into the issue branch. An approved isolated worktree is an alternative, but it must have the required committed specifications.
+If there are staged, modified, or untracked files, agree how to preserve them before switching branches or syncing. Do not automatically stash, discard, stage, or commit unrelated work. An approved isolated worktree is an alternative, but it must have the required committed specifications.
 
 ## 2. Read the acceptance criteria and prerequisites
 
@@ -59,24 +59,27 @@ Check prerequisites stated in the issue body and plan as well. Every actual prer
 
 If a blocker is open, report its issue number and stop unless the user explicitly approves a dependency/scope change. Record an approved change in the issue and plan rather than silently implementing out of order.
 
-If the specifications are only present as uncommitted files in another branch or worktree, stop and have them published to the agreed base first. Do not copy unrelated work into the new feature branch.
+If the specifications are only present as uncommitted files in another branch or worktree, stop and have them published to `dev` first. Do not copy unrelated work into the issue implementation.
 
-## 3. Obtain approval and create the feature branch
+## 3. Obtain approval and prepare dev
 
-Before Git writes, request explicit approval through the host's question tool. One approval can cover the current issue's fetch/branch creation, implementation commit, standard push to `origin`, PR creation in the fork, and evidence comment. State the exact issue, base repository, base branch, and planned branch name.
+Before Git writes, request explicit approval through the host's question tool. One approval can cover the current issue's switch to `dev`, history-preserving sync, implementation commit, standard push to `origin/dev`, and evidence comment. State the exact issue and destination. Approval to work on `dev` is not blanket approval for future Git writes or Azure deployment.
 
 If the user declines, do not perform the unapproved operations. Existing session opt-outs and stricter approval requirements still apply. Do not interpret the skill's existence as blanket permission to commit or push.
 
-Choose a short lowercase slug containing only letters, digits, and hyphens. Check for an existing local branch, remote branch, or PR for the same issue before creating one. Do not overwrite an existing branch or create a duplicate PR; resume only after confirming its issue, base, ownership, and scope.
+Check for existing implementation work or a PR for the same issue before starting. Do not duplicate, discard, delete, or merge it automatically. If work is already on a feature branch, obtain approval to integrate it into `dev` while preserving history.
 
 After approval and with a clean worktree:
 
 ```bash
 git fetch origin
-git switch -c bobjac/issue-<N>-<slug> origin/dev
+git switch dev
+git merge --ff-only origin/dev
 ```
 
-Start from the latest fork `origin/dev`, not from the current hack branch, local stale `dev`, or `upstream/dev`. Do not switch the developer's branch when using an approved separate worktree.
+If fast-forwarding fails because histories diverge, inspect the commits and obtain approval for `git merge origin/dev`; preserve both histories and rerun affected validation. Never rebase or reset away commits. If branch protection rejects direct publication, stop and ask rather than bypassing it or silently creating a PR.
+
+Start from the latest fork `origin/dev`, not stale local `dev` or `upstream/dev`. Do not switch the developer's branch when using an approved separate worktree.
 
 ## 4. Implement one bounded issue
 
@@ -110,7 +113,7 @@ Record each exact command and outcome. Fix failures caused by the change and rer
 
 When acceptance requires a live deployment, obtain separate approval to use the sandbox. Publish and dispatch the approved workflow only when its branch/environment policy permits it, and verify its actual result. Do not bypass a `dev`-only deployment restriction or infer end-to-end success from the resource-group smoke test.
 
-Do not present the implementation as complete when required evidence is missing. If the user explicitly wants review of incomplete work, publish a clearly labeled draft PR with the blockers and remaining validation; otherwise stop at the blocker.
+Do not present the implementation as complete when required evidence is missing. When a live check requires code on `dev`, obtain explicit approval to publish the locally validated revision with live validation pending. Record the blockers and leave the issue open. Publication is not acceptance, deployment approval, or permission to weaken environment protection.
 
 ## 6. Commit and push only the issue changes
 
@@ -124,62 +127,39 @@ git diff --cached --check
 git diff --cached
 ```
 
-Commit only within the approved scope, using a conventional commit message tied to the issue. Include the repository/host's configured trailers, including Copilot attribution and the current session ID when required. Resolve the session ID from the active host instructions; never reuse the skill-authoring session's ID.
+Commit only within the approved scope, using a conventional commit message with a `Refs bobjac/finops-toolkit#<N>` reference. Do not use automatic closing keywords while required validation or closure approval is pending. Include the repository/host's configured trailers, including Copilot attribution and the current session ID when required. Resolve the session ID from the active host instructions; never reuse the skill-authoring session's ID.
 
-Push the exact feature branch with a normal push:
-
-```bash
-git push --set-upstream origin bobjac/issue-<N>-<slug>
-```
-
-If the fork's base has moved and conflicts need resolution, obtain approval for `git merge origin/dev`, preserve both sides' valid changes, and rerun relevant validation. Never use rebase or force-push as a shortcut.
-
-## 7. Open the PR explicitly against the fork's dev
-
-Inspect the repository's current PR template before drafting:
-
-- `.github/pull_request_template.md`
-- `.github/PULL_REQUEST_TEMPLATE.md`
-- `.github/PULL_REQUEST_TEMPLATE/`
-
-Use the applicable template and preserve its headings, comments, checklist items, and order. Replace placeholders with accurate content. Mark screenshots as not applicable when appropriate without substituting a generic body. Check only tests actually run; include exact commands and results or explicit reasons they were not run.
-
-Do not include Copilot co-author attribution or session trailers in the PR title or body. Any required `Co-authored-by` and `Copilot-Session` trailers belong only in Git commit messages; do not copy them into the PR description.
-
-Use `Fixes bobjac/finops-toolkit#<N>` so merging into the fork's default `dev` closes the intended issue. Do not call `gh issue close` before merge.
-
-Leave deployment checklist options unchecked unless the user has explicitly approved their associated workflows. A request to implement an issue is not approval for automatic Azure deployment.
-
-Store the prepared PR body in an appropriate temporary/session artifact without credentials. Create the PR with explicit repository, base, and head:
+Verify the working branch is `dev`, then push normally to the fork:
 
 ```bash
-gh pr create --repo bobjac/finops-toolkit \
-  --base dev \
-  --head bobjac/issue-<N>-<slug> \
-  --title "<conventional, descriptive title>" \
-  --body-file <prepared-body-path>
+git branch --show-current
+git push origin dev
 ```
 
-Use `--draft` only for explicitly approved incomplete work. Do not enable auto-merge.
+If remote `dev` has moved, fetch and obtain approval for `git merge origin/dev`, preserve both sides' valid changes, and rerun relevant validation. Never use rebase or force-push as a shortcut.
 
-Verify the created PR, not just the command's exit status:
+## 7. Verify publication and record delivery evidence
+
+Verify the pushed revision is reachable from the fork's remote `dev`, not just that the push exited successfully:
 
 ```bash
-gh pr view <PR> --repo bobjac/finops-toolkit \
-  --json url,baseRefName,headRefName,headRepositoryOwner,isCrossRepository,isDraft,closingIssuesReferences
-gh pr checks <PR> --repo bobjac/finops-toolkit
+git fetch origin
+git merge-base --is-ancestor <implementation-commit> origin/dev
+gh run list --repo bobjac/finops-toolkit --branch dev --commit <implementation-commit>
 ```
 
-Confirm the URL is in `bobjac/finops-toolkit`, the base is `dev`, the head is the intended branch, and the closing reference is the selected issue. Report pending or failed CI honestly; do not claim all checks passed while they are still running.
+Inspect relevant workflow runs and report pending, failed, disabled, or absent CI honestly. Do not claim hosted validation from local tests or a successful push.
 
-## 8. Record delivery evidence and hand off
+Add one concise issue comment linking the implementation commit and listing acceptance/validation evidence and known limitations. Do not claim dependent issues are unblocked before their prerequisites are delivered. Close the issue only after required evidence is verified and the user explicitly approves.
 
-Add one concise issue comment linking the fork-local PR and listing acceptance/validation evidence and known limitations. Leave the issue open pending merge; do not mark the parent checklist complete or claim dependent issues are unblocked before their prerequisites are delivered.
+If the user explicitly requests a PR workflow instead, obtain approval for the feature branch and publication destination, inspect and preserve the repository's PR template, and target `bobjac/finops-toolkit:dev`. Do not create an empty PR from `dev` to itself or enable auto-merge.
+
+## 8. Hand off
 
 Return:
 
-- Issue and PR links.
-- Feature branch and explicit destination `bobjac/finops-toolkit:dev`.
+- Issue and implementation commit links.
+- Working branch `dev` and explicit destination `bobjac/finops-toolkit:dev`.
 - What changed and why.
 - Exact validation commands/results, pending CI, and deployment/cleanup status when applicable.
 - Any remaining blockers.

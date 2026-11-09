@@ -8,9 +8,9 @@ The FinOps Toolkit is an open-source collection of tools for adopting and implem
 
 ## Issue Implementation Workflow
 
-For "build issue N", "implement issue N", or "build the next issue" in this fork, use the repository-local [build-issue skill](./skills/build-issue/SKILL.md). It checks prerequisites, creates an issue branch from `origin/dev`, implements and validates, and publishes a PR explicitly to `bobjac/finops-toolkit:dev` after required approval.
+For "build issue N", "implement issue N", or "build the next issue" in this fork, use the repository-local [build-issue skill](.github/skills/build-issue/SKILL.md). It checks prerequisites, implements and validates directly on `dev`, and publishes to `origin/dev` after required approval. Do not create feature branches or PRs unless explicitly requested.
 
-This workflow takes precedence over personal issue-workflow defaults for this repository. Do not combine it with a workflow that closes an issue before merge. Keep all hack tracking issues and PRs in the fork, never upstream; preserve the existing Git approval and history rules.
+This workflow applies only to `bobjac/finops-toolkit` and takes precedence over personal issue-workflow defaults. Keep all hack tracking issues and any explicitly requested PRs in the fork, never upstream. Preserve Git approval and history rules, and close issues only after required validation and explicit approval.
 
 ## Common Commands
 
@@ -168,9 +168,10 @@ The PowerShell-based build system:
 ### Branch Strategy
 
 - **`dev`** - Main integration branch
-- Feature branches merge into `dev`
+- Develop directly on `dev` in this fork by default
+- Create feature branches or PRs only when explicitly requested
 - Releases are tagged from `dev`
-- Branch names must be prefixed with the GitHub username (e.g., `{username}/my-feature`)
+- Explicitly requested feature branch names must be prefixed with the GitHub username (e.g., `{username}/my-feature`)
 
 ### Git Operations Policy
 
@@ -194,7 +195,7 @@ This repository supports production infrastructure managing significant revenue.
 - `git filter-branch`, `git reflog`-based history manipulation
 - Any operation that rewrites, reorders, squashes, or deletes commits that have been pushed to the remote
 
-**Conflict resolution:** When a branch has merge conflicts with `dev`, the only permitted approach is `git merge origin/dev` into the feature branch. This creates a merge commit and preserves all history.
+**Conflict resolution:** Sync local `dev` with `git merge origin/dev` after approval. Use a fast-forward when possible; resolve divergence with a merge commit that preserves both histories. The same merge-only rule applies to explicitly requested feature branches. Never rebase.
 
 **Common conflict patterns in this repository:**
 
