@@ -6,6 +6,30 @@ BeforeAll {
 }
 
 Describe 'Sample ownership and price preflight' {
+    It 'retries a cold-start timeout but bounds retries and refuses offline readiness' {
+        $script:readinessCalls = 0
+        $script:readinessMode = 'cold-start'
+        Mock Start-Sleep {}
+        Mock Invoke-RestMethod {
+            $script:readinessCalls++
+            if ($script:readinessMode -eq 'timeout' -or $script:readinessCalls -eq 1) {
+                throw [System.Threading.Tasks.TaskCanceledException]::new('Synthetic readiness timeout.')
+            }
+            return @{
+                status = 'ready'
+                modelMode = if ($script:readinessMode -eq 'offline') { 'deterministic' } else { 'azure-openai' }
+            }
+        }
+        $uri = [Uri]'https://sample.azurecontainerapps.io'
+        { Wait-SampleReady -BaseUri $uri -WarningAction SilentlyContinue } | Should -Not -Throw
+        $script:readinessCalls | Should -Be 2
+        foreach ($mode in @('timeout', 'offline')) {
+            $script:readinessCalls = 0
+            $script:readinessMode = $mode
+            { Wait-SampleReady -BaseUri $uri -WarningAction SilentlyContinue } | Should -Throw '*not ready*'
+            $script:readinessCalls | Should -Be 30
+        }
+    }
     It 'previews without creating and rejects deletion, unsupported changes, and foreign scopes' {
         $scope = '/subscriptions/approved/resourceGroups/ftk-dto-hack-s-ae46'
         $script:samplePreview = @{

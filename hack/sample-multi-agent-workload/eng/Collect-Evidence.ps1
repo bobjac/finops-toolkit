@@ -14,20 +14,7 @@ param(
 if ($BaseUri.Scheme -ne 'https' -or $BaseUri.Host -notlike '*.azurecontainerapps.io') {
     throw 'Live validation requires the deployed Container Apps HTTPS endpoint.'
 }
-$ready = $null
-for ($attempt = 0; $attempt -lt 30; $attempt++) {
-    try {
-        $ready = Invoke-RestMethod -Uri "$($BaseUri.AbsoluteUri.TrimEnd('/'))/ready" -TimeoutSec 10
-        if ($ready.status -eq 'ready' -and $ready.modelMode -eq 'azure-openai') { break }
-    }
-    catch [Microsoft.PowerShell.Commands.HttpResponseException] {
-        Write-Warning 'The deployed revision is not ready yet.'
-    }
-    Start-Sleep -Seconds 3
-}
-if ($ready.status -ne 'ready' -or $ready.modelMode -ne 'azure-openai') {
-    throw 'The live runtime is not ready; an offline container is not live acceptance.'
-}
+Wait-SampleReady -BaseUri $BaseUri
 $golden = Get-Content "$PSScriptRoot/../tests/evaluation/questions.json" -Raw | ConvertFrom-Json
 $results = @()
 foreach ($case in $golden) {

@@ -54,6 +54,21 @@ function Assert-SampleOwnership {
     }
 }
 
+function Wait-SampleReady {
+    param([Parameter(Mandatory)][Uri]$BaseUri)
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        try {
+            $ready = Invoke-RestMethod -Uri "$($BaseUri.AbsoluteUri.TrimEnd('/'))/ready" -TimeoutSec 10
+            if ($ready.status -eq 'ready' -and $ready.modelMode -eq 'azure-openai') { return }
+        }
+        catch [Microsoft.PowerShell.Commands.HttpResponseException], [System.Threading.Tasks.TaskCanceledException] {
+            Write-Warning 'The deployed revision is not ready yet.'
+        }
+        Start-Sleep -Seconds 3
+    }
+    throw 'The live runtime is not ready; an offline container is not live acceptance.'
+}
+
 function Assert-SamplePrice {
     param([Parameter(Mandatory)][string]$Json)
     $prices = $Json | ConvertFrom-Json
