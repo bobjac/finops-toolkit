@@ -143,7 +143,7 @@ def test_readiness_without_azure_and_no_model_calls(client: TestClient) -> None:
     response = client.get("/ready")
     assert response.status_code == 200
     assert response.json()["modelMode"] == "deterministic"
-    assert "H05" in response.json()["limitations"][0]
+    assert "not model or exporter access" in response.json()["limitations"][0]
 
 
 @pytest.mark.parametrize("database_state", ["missing", "wrong-schema"])

@@ -36,7 +36,7 @@ Responses include `modelMode`, the actual agent-call sequence, schema version, r
 
 SQL validation permits a single `SELECT`, restricts tables, and denies CTEs, `SELECT INTO`, writes, and multiple statements. SQLite additionally enforces read-only connections, a table/function authorizer, bounded rows, and execution timeouts. Over-limit queries fail instead of returning a partial answer. Direct `sqlite3` access is intentional: the connection-level authorizer provides the enforcement boundary.
 
-The API's `/health` checks process availability. `/ready` checks the local schema without model calls; its response explicitly defers live endpoint and telemetry-exporter checks to H05. Dependency failures return HTTP 503, rejected queries return 422, and execution or answer-verification failures return 500. Model diagnostic text is not logged or copied into responses.
+The API's `/health` checks process availability. `/ready` checks the local schema and startup configuration without model calls; it does not establish model or exporter access. Dependency failures return HTTP 503, rejected queries return 422, and execution or answer-verification failures return 500. Model diagnostic text is not logged or copied into responses.
 
 ### Validation
 
@@ -49,7 +49,56 @@ The API's `/health` checks process availability. `/ready` checks the local schem
 
 Golden expectations are checked-in values, not regenerated from the application. Evaluation compares statuses, answer text, columns, ordered rows, row counts, and agent calls, and exits nonzero on any mismatch. The tests also exercise unsafe SQL, provider failures at each agent, timeouts, incorrect results, and invented explanations. The root [sample CI workflow](../../.github/workflows/sample-workload-ci.yml) runs these checks and retains the offline evaluation report.
 
-Container packaging, Azure deployment, managed-identity model access, OpenTelemetry export, load tests, and cleanup remain later hack work. The commands below those sections are planned interfaces, not implemented H04 capabilities.
+H05 adds container packaging, managed-identity model access, OpenTelemetry export, and an independent deployment lifecycle. Load tests and optimization experiments remain later work. The broader roadmap below includes planned interfaces beyond H05.
+
+## H05 live runtime and deployment
+
+The `azure-openai` adapter uses an asynchronous managed-identity token provider and Azure OpenAI chat completions. It does not use model API keys, developer credentials, hidden SDK retries, or a deterministic fallback. The deployment pins GPT-5 mini version `2025-08-07` with GlobalStandard capacity `10`, the catalog default. Capacity limits request throughput; it is not reserved paid throughput or a billing cap.
+
+Responses add provider-measured `modelUsage` and `traceId`. Input tokens include cached input; `cachedInputTokens` is absent or null when the provider does not report it, never an invented zero. Truncated or invalid responses remain dependency failures, but their reported usage is retained. Requests, agents, model calls, and database execution share a trace. The database span is a child of the SQL-agent span.
+
+Ordinary spans contain model identity, measured tokens, variant, status, and correlation identifiers, not questions, SQL, rows, credentials, response text, or provider exception bodies. Session and experiment labels are SHA-256 hashed before export; `sessionHash` and `experimentHash` in response evidence are the values to query. These hashes are correlation identifiers, not encryption. SDK exception events and offline telemetry storage are disabled.
+
+### Local container validation
+
+```bash
+docker build -t sample-workload:local .
+docker run --rm -p 127.0.0.1:8080:8080 \
+  -e SAMPLE_MODEL_MODE=deterministic sample-workload:local
+```
+
+The image pins its base digest and runtime dependencies in `requirements.lock`. It runs as UID `10001` with the immutable seed-42 database baked into `/app/data/retail.db`. Container-local state is replaceable, not durable business storage. No model mode is selected by default: an omitted or invalid mode fails startup.
+
+If a network requires an approved public HTTPS package mirror, pass `--build-arg PIP_INDEX_URL=<mirror URL>`. Do not disable TLS verification or pass credential-bearing URLs as build arguments.
+
+The live container additionally requires `AZURE_CLIENT_ID`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`, `APPLICATIONINSIGHTS_CONNECTION_STRING`, and `SAMPLE_API_TOKEN`. Bicep wires these values and retrieves the generated API token from Key Vault. Billable `/api/questions` requests require the `x-sample-token` header. Public health/readiness endpoints do not invoke the model. Do not put the token into source, command history, ordinary logs, or evidence artifacts.
+
+### CI and approved CD
+
+The root [sample CI](../../.github/workflows/sample-workload-ci.yml) checks formatting, lint, strict types, Python tests, deployment eligibility, ownership/price preflight, Bicep, the Linux container, and offline golden evaluation. In-memory exporter tests use a mocked HTTP provider: they verify the real SDK adapter and tracing logic, not actual Azure access.
+
+The root [sample CD](../../.github/workflows/sample-workload-cd.yml) follows successful trusted `dev` push CI. It rejects stale revisions, PR runs, foreign repositories, missing required-reviewer protection, and missing approval for the actual sandbox workflow run. It rechecks before Azure sign-in, then uses sandbox OIDC. It never configures reviewers or bypasses environment protection.
+
+Before paid deployment, an administrator must resolve Actions availability and configure required reviewers on `sandbox`. Configure the existing Azure OIDC secrets and the sandbox variables `SAMPLE_DEPLOYER_OBJECT_ID` (the deployment service principal's object ID) and `SAMPLE_PRICE_EVIDENCE`. The identity needs resource provisioning and role-assignment permissions, registry build access, secret access after scoped RBAC, and workspace query access. Missing access is an error, not acceptance.
+
+`SAMPLE_PRICE_EVIDENCE` is JSON containing:
+
+| Field | Required value |
+| --- | --- |
+| `currency`, `region` | `USD`, `eastus2` |
+| `model`, `modelVersion`, `deploymentSku` | `gpt-5-mini`, `2025-08-07`, `GlobalStandard` |
+| `inputPerMillion`, `cachedInputPerMillion`, `outputPerMillion` | Verified positive USD rates per million tokens |
+| `analyticsPerGB` | Verified positive USD rate for the actual Analytics ingestion tier |
+| `verifiedAt` | ISO 8601 verification timestamp within seven days |
+| `sourceUrls` | Model and Analytics pricing sources on authoritative Azure HTTPS domains |
+
+Do not use Platform, Basic, or Auxiliary logging meters as substitutes for Analytics ingestion. The partial infrastructure estimate is approximately USD 5.82/month at one active hour/day before shared grants, plus unverified ingestion, inference, retention, and transfer charges. The USD 300 ceiling and configured expiration are declarations; they do not enforce a billing cap or remove resources.
+
+The directory-local `eng/Deploy-Sample.ps1` previews each Bicep phase before applying it and rejects deletion, unsupported changes, and changes outside the owned sample group. It generates or reuses the protected access token, builds the exact revision through ACR, activates the live image, and calls `eng/Collect-Evidence.ps1`. Collection independently checks the golden cases, per-agent model identity and measured input/output/cached usage, and queried Application Insights correlation. Deployment and removal reject accounts outside the approved subscription and tenant. Change the plan and account guard together before targeting another sandbox. Nonsecret reports are retained as workflow artifacts. No FinOps hub or load-testing resource is required.
+
+Successful resources are retained. Failed deployments may also retain resources; failures never automatically delete a previously successful group. To remove only `ftk-dto-hack-s-ae46`, manually dispatch **Sample workload CD** on `dev`, enter that exact confirmation, and approve the sandbox environment. `eng/Remove-Sample.ps1` verifies ownership before deletion and supports `-WhatIf`. Foundation resources are excluded.
+
+H05 is not accepted until an approved deployment, actual model calls, and exported telemetry have all been verified. A local test, image build, successful push, or template compilation alone is insufficient.
 
 ## Source and deployment boundary
 

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "ftk-dto-hack-s-ae46"
+    },
+    "location": {
+      "value": "eastus2"
+    },
+    "sessionId": {
+      "value": "ae4678d3-0f99-42b6-9ba7-40fa7682d646"
+    },
+    "deployedBy": {
+      "value": "GitHub Actions sandbox OIDC identity"
+    },
+    "createdAt": {
+      "value": "2026-11-09T03:46:38+00:00"
+    },
+    "containerImage": {
+      "value": "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+    },
+    "isPlaceholder": {
+      "value": true
+    },
+    "revision": {
+      "value": "ae46"
+    },
+    "optimizationExperimentId": {
+      "value": "h05"
+    },
+    "optimizationVariant": {
+      "value": "baseline"
+    },
+    "expiresOn": {
+      "value": "2026-12-31"
+    }
+  }
+}

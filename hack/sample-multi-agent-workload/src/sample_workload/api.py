@@ -2,8 +2,9 @@
 # Licensed under the MIT License.
 
 import logging
+from secrets import compare_digest
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .agents import Coordinator
@@ -13,8 +14,10 @@ from .database import DatabaseUnavailable
 logger = logging.getLogger(__name__)
 
 
-def create_app(coordinator: Coordinator) -> FastAPI:
-    app = FastAPI(title="Contoso Outdoor offline retail sample")
+def create_app(coordinator: Coordinator, *, api_token: str | None = None) -> FastAPI:
+    if coordinator.model.mode != "deterministic" and (api_token is None or len(api_token) < 32):
+        raise ValueError("The live API requires an access token of at least 32 characters.")
+    app = FastAPI(title="Contoso Outdoor retail sample")
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -32,13 +35,17 @@ def create_app(coordinator: Coordinator) -> FastAPI:
                 "status": "ready",
                 "modelMode": coordinator.model.mode,
                 "limitations": [
-                    "Live model access and telemetry exporter readiness are deferred to H05."
+                    "Readiness checks local configuration, not model or exporter access."
                 ],
             }
         )
 
     @app.post("/api/questions")
-    async def answer(question: Question) -> JSONResponse:
+    async def answer(question: Question, request: Request) -> JSONResponse:
+        if api_token is not None and not compare_digest(
+            request.headers.get("x-sample-token", "").encode(), api_token.encode()
+        ):
+            return JSONResponse({"error": "Unauthorized."}, status_code=401)
         result = await coordinator.answer(question)
         status = {
             "dependency-failed": 503,

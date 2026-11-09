@@ -49,6 +49,13 @@ class QueryData(Contract):
     rows: list[list[Scalar]] = Field(default_factory=list)
 
 
+class ModelUsage(Contract):
+    model: str
+    input_tokens: int = Field(ge=0, alias="inputTokens")
+    output_tokens: int = Field(ge=0, alias="outputTokens")
+    cached_input_tokens: int | None = Field(default=None, ge=0, alias="cachedInputTokens")
+
+
 class Evidence(Contract):
     model_mode: str = Field(alias="modelMode")
     agent_calls: list[str] = Field(default_factory=list, alias="agentCalls")
@@ -57,6 +64,10 @@ class Evidence(Contract):
     row_count: int = Field(default=0, alias="rowCount")
     schema_version: str = Field(default="1", alias="schemaVersion")
     reference_date: str = Field(default="2026-10-01", alias="referenceDate")
+    model_usage: list[ModelUsage] = Field(default_factory=list, alias="modelUsage")
+    trace_id: str | None = Field(default=None, alias="traceId")
+    session_hash: str | None = Field(default=None, alias="sessionHash")
+    experiment_hash: str | None = Field(default=None, alias="experimentHash")
 
 
 class Answer(Contract):

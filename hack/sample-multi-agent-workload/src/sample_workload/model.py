@@ -2,9 +2,10 @@
 # Licensed under the MIT License.
 
 import json
+from dataclasses import dataclass
 from typing import Protocol
 
-from .contracts import QueryData
+from .contracts import ModelUsage, QueryData
 
 QUESTIONS = {
     "What were the top five product categories by revenue last month?": "category-revenue",
@@ -68,10 +69,17 @@ class ModelDependencyError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class ModelResponse:
+    content: str
+    usage: ModelUsage
+    complete: bool = True
+
+
 class ModelClient(Protocol):
     mode: str
 
-    async def complete(self, role: str, context: dict[str, object]) -> str:
+    async def complete(self, role: str, context: dict[str, object]) -> str | ModelResponse:
         """Return JSON for one agent call, or raise ModelDependencyError."""
         ...
 

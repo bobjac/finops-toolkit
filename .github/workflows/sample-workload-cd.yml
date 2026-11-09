@@ -1,0 +1,130 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sample workload CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Enter ftk-dto-hack-s-ae46 to remove only the sample group
+        type: string
+        required: true
+  workflow_run:
+    workflows: [Sample workload CI]
+    types: [completed]
+    branches: [dev]
+
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+
+concurrency:
+  group: sandbox-sample-deployment
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.repository == 'bobjac/finops-toolkit' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'dev' &&
+      github.event.workflow_run.head_repository.full_name == 'bobjac/finops-toolkit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Check trusted CI and required sandbox protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs
+
+  deploy:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Verify actual approval and current revision before Azure sign-in
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --require-approval
+      - name: Sign in to Azure with sandbox identity
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy and verify the independently owned sample
+        shell: pwsh
+        env:
+          SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+          SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          ./hack/sample-multi-agent-workload/eng/Deploy-Sample.ps1 `
+            -Revision $env:SOURCE_REVISION `
+            -DeployerObjectId $env:SAMPLE_DEPLOYER_OBJECT_ID `
+            -ConfirmResourceGroup ftk-dto-hack-s-ae46 `
+            -OutputDirectory "$env:RUNNER_TEMP/sample-evidence"
+      - name: Retain nonsecret deployment and live validation evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sample-deployment-${{ github.run_id }}
+          path: ${{ runner.temp }}/sample-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  remove:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'bobjac/finops-toolkit' &&
+      github.ref == 'refs/heads/dev' &&
+      inputs.confirmation == 'ftk-dto-hack-s-ae46'
+    runs-on: ubuntu-latest
+    environment: sandbox
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify actual sandbox approval before removal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --lifecycle --require-approval
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Remove only the confirmed independently owned group
+        shell: pwsh
+        run: |
+          ./hack/sample-multi-agent-workload/eng/Remove-Sample.ps1 `
+            -ConfirmResourceGroup ftk-dto-hack-s-ae46 -Confirm:$false

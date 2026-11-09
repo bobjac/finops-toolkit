@@ -7,12 +7,16 @@ on:
     paths:
       - hack/sample-multi-agent-workload/**
       - .github/workflows/sample-workload-ci.yml
+      - .github/workflows/sample-workload-cd.yml
+      - hack/sandbox.config.json
   pull_request:
     branches:
       - dev
     paths:
       - hack/sample-multi-agent-workload/**
       - .github/workflows/sample-workload-ci.yml
+      - .github/workflows/sample-workload-cd.yml
+      - hack/sandbox.config.json
   workflow_dispatch:
 
 permissions:
@@ -37,7 +41,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install sample dependencies
-        run: python -m pip install -e '.[dev]'
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install -e '.[dev]'
 
       - name: Check formatting, lint, and types
         run: |
@@ -47,6 +53,43 @@ jobs:
 
       - name: Run functional and SQL-safety tests
         run: python -m pytest -q
+
+      - name: Test fail-closed deployment eligibility
+        run: node --test tests/deployment.test.mjs
+
+      - name: Test and lint the sample deployment lifecycle
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $result = Invoke-Pester ./tests/SampleDeployment.Tests.ps1 -PassThru -Output Detailed
+          if ($result.FailedCount -or $result.Result -ne 'Passed') { throw 'Sample preflight tests failed.' }
+          $issues = @(Invoke-ScriptAnalyzer -Path ./eng -Recurse -Severity Warning,Error)
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Sample lifecycle lint failed.' }
+
+      - name: Validate sample infrastructure
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+      - name: Build and start the explicit offline container
+        run: |
+          set -euo pipefail
+          docker build -t sample-workload:ci .
+          if docker run --rm sample-workload:ci; then
+            echo 'A missing model mode must fail startup.' >&2
+            exit 1
+          fi
+          docker run -d --name sample-ci -p 127.0.0.1:8080:8080 \
+            -e SAMPLE_MODEL_MODE=deterministic sample-workload:ci
+          trap 'docker rm -f sample-ci' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/ready; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:8080/ready
+          curl --fail --silent http://127.0.0.1:8080/api/questions \
+            -H 'Content-Type: application/json' \
+            -d '{"question":"Which products are below their reorder point?","sessionId":"ci","experimentId":"ci"}' \
+            | python -c 'import json,sys; r=json.load(sys.stdin); assert r["answerStatus"]=="answered"; assert r["data"]["rows"]==[["P-1002","Lantern",3,5],["P-1004","Jacket",2,5]]'
 
       - name: Run offline golden evaluation
         run: |
