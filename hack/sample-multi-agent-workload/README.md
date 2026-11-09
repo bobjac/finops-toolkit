@@ -79,6 +79,8 @@ The root [sample CI](../../.github/workflows/sample-workload-ci.yml) checks form
 
 The root [sample CD](../../.github/workflows/sample-workload-cd.yml) follows successful trusted `dev` push CI. It rejects stale revisions, PR runs, foreign repositories, missing required-reviewer protection, and missing approval for the actual sandbox workflow run. It rechecks before Azure sign-in, then uses sandbox OIDC. It never configures reviewers or bypasses environment protection.
 
+After enabling Actions and saving the sandbox protection rules, push a new `dev` commit that changes the sample, its workflows, or the sandbox configuration. Successful push CI starts CD, which waits for sandbox approval before signing in to Azure. Manually running sample CI validates the code but does not start deployment. The CD workflow's manual **Run workflow** action is for sample removal only.
+
 Before paid deployment, an administrator must resolve Actions availability and configure required reviewers on `sandbox`. Configure the existing Azure OIDC secrets and the sandbox variables `SAMPLE_DEPLOYER_OBJECT_ID` (the deployment service principal's object ID) and `SAMPLE_PRICE_EVIDENCE`. The identity needs resource provisioning and role-assignment permissions, registry build access, secret access after scoped RBAC, and workspace query access. Missing access is an error, not acceptance.
 
 `SAMPLE_PRICE_EVIDENCE` is JSON containing:
