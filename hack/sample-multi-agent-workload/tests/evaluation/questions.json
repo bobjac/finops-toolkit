@@ -1,0 +1,67 @@
+[
+  {
+    "id": "category-revenue",
+    "question": "What were the top five product categories by revenue last month?",
+    "expectedStatus": "answered",
+    "expectedAnswer": "Top categories by revenue for September 2026, in synthetic USD.",
+    "expectedData": {
+      "columns": ["category", "revenue"],
+      "rows": [["Water sports", 400], ["Camping", 280], ["Footwear", 240], ["Apparel", 180], ["Packs", 150]]
+    },
+    "expectedCalls": ["coordinator", "schema-agent", "sql-agent", "analysis-agent"]
+  },
+  {
+    "id": "inventory-below-reorder",
+    "question": "Which products are below their reorder point?",
+    "expectedStatus": "answered",
+    "expectedAnswer": "Products below their reorder point.",
+    "expectedData": {
+      "columns": ["productId", "product", "onHand", "reorderPoint"],
+      "rows": [["P-1002", "Lantern", 3, 5], ["P-1004", "Jacket", 2, 5]]
+    },
+    "expectedCalls": ["coordinator", "schema-agent", "sql-agent", "analysis-agent"]
+  },
+  {
+    "id": "open-orders",
+    "question": "How many open orders are waiting for shipment?",
+    "expectedStatus": "answered",
+    "expectedAnswer": "Open orders waiting for shipment: 3.",
+    "expectedData": {"columns": ["openOrders"], "rows": [[3]]},
+    "expectedCalls": ["coordinator", "schema-agent", "sql-agent", "analysis-agent"]
+  },
+  {
+    "id": "fulfillment-by-region",
+    "question": "What is the average fulfillment time by region?",
+    "expectedStatus": "answered",
+    "expectedAnswer": "Average fulfillment time by region, in days.",
+    "expectedData": {"columns": ["region", "days"], "rows": [["North", 1.0], ["South", 2.0], ["West", 1.0]]},
+    "expectedCalls": ["coordinator", "schema-agent", "sql-agent", "analysis-agent"]
+  },
+  {
+    "id": "missed-ship-date",
+    "question": "Which orders have missed their promised ship date?",
+    "expectedStatus": "answered",
+    "expectedAnswer": "Orders that missed their promised ship date as of 2026-10-01.",
+    "expectedData": {
+      "columns": ["orderId", "promisedShipDate"],
+      "rows": [["O-2", "2026-09-07"], ["O-4", "2026-09-17"], ["O-6", "2026-09-27"]]
+    },
+    "expectedCalls": ["coordinator", "schema-agent", "sql-agent", "analysis-agent"]
+  },
+  {
+    "id": "shipment-delay-cause",
+    "question": "Why were shipments delayed after leaving the warehouse?",
+    "expectedStatus": "unable-to-answer",
+    "expectedAnswer": "Shipment delay causes are not recorded in the current schema.",
+    "expectedData": {"columns": [], "rows": []},
+    "expectedCalls": ["coordinator"]
+  },
+  {
+    "id": "clarification",
+    "question": "Tell me about the store.",
+    "expectedStatus": "clarification-required",
+    "expectedAnswer": "Choose a supported retail question from the documented question set.",
+    "expectedData": {"columns": [], "rows": []},
+    "expectedCalls": ["coordinator"]
+  }
+]

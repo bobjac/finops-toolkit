@@ -1,0 +1,65 @@
+name: Sample workload CI
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - hack/sample-multi-agent-workload/**
+      - .github/workflows/sample-workload-ci.yml
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - hack/sample-multi-agent-workload/**
+      - .github/workflows/sample-workload-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-sample:
+    name: Local sample acceptance
+    if: github.repository == 'bobjac/finops-toolkit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: hack/sample-multi-agent-workload
+    steps:
+      - name: Check out the selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Install sample dependencies
+        run: python -m pip install -e '.[dev]'
+
+      - name: Check formatting, lint, and types
+        run: |
+          python -m ruff format --check .
+          python -m ruff check .
+          python -m mypy src tests
+
+      - name: Run functional and SQL-safety tests
+        run: python -m pytest -q
+
+      - name: Run offline golden evaluation
+        run: |
+          python -m sample_workload initialize --database data/retail.db --seed 42
+          python -m sample_workload evaluate --database data/retail.db \
+            --model-mode deterministic --questions tests/evaluation/questions.json \
+            --output evidence/evaluation.json
+
+      - name: Retain evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: offline-sample-evaluation
+          path: hack/sample-multi-agent-workload/evidence/evaluation.json
+          if-no-files-found: warn
+          retention-days: 7

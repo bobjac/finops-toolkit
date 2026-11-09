@@ -2,6 +2,55 @@
 
 For this hack, follow the [hack delivery plan](../project-plan.md). Its `H*` backlog controls scope and sequencing; the `SMP-*` backlog is a detailed implementation reference.
 
+## H04 local sample
+
+The local sample implements the five supported retail questions, the intentional shipment-delay gap, and clarification for questions outside that fixed set. Four typed agent instances cooperate through a replaceable JSON model-client contract. The explicitly selected `deterministic` adapter provides offline responses; it is not a live language model and does not establish model access, token usage, pricing, or savings.
+
+The synthetic database contains six products, three customers, seven orders, and four shipments. Seed `42` reproduces identical database contents. The reference date is fixed at October 1, 2026, so "last month" means September 2026 regardless of the machine clock. Revenue uses order-item values in synthetic USD; fulfillment time means days from order placement to shipment. Curated business records are stable; the seed controls synthetic customer segments and reserved inventory.
+
+Use Python 3.12 or later. From this directory:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m sample_workload initialize --database data/retail.db --seed 42
+.venv/bin/python -m sample_workload evaluate --database data/retail.db \
+  --model-mode deterministic --questions tests/evaluation/questions.json \
+  --output evidence/evaluation.json
+.venv/bin/python -m sample_workload run --database data/retail.db \
+  --model-mode deterministic --host 127.0.0.1 --port 8000
+```
+
+On Windows, use `.venv\Scripts\python.exe` in place of `.venv/bin/python`. Initialization refuses to overwrite a database; use a new output path to verify reproducibility. Database files and evaluation reports are ignored by source control.
+
+In another terminal:
+
+```bash
+curl --fail http://127.0.0.1:8000/ready
+curl --fail http://127.0.0.1:8000/api/questions \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Which products are below their reorder point?","sessionId":"local-1","experimentId":"offline-1","variant":"baseline"}'
+```
+
+Responses include `modelMode`, the actual agent-call sequence, schema version, reference date, and generated SQL. The coordinator returns `unable-to-answer` for shipment-delay causes without executing SQL. Unknown questions return `clarification-required`. Model failures, timeouts, invalid contracts, rejected queries, and query failures remain explicit; no failure falls back to fixture data.
+
+SQL validation permits a single `SELECT`, restricts tables, and denies CTEs, `SELECT INTO`, writes, and multiple statements. SQLite additionally enforces read-only connections, a table/function authorizer, bounded rows, and execution timeouts. Over-limit queries fail instead of returning a partial answer. Direct `sqlite3` access is intentional: the connection-level authorizer provides the enforcement boundary.
+
+The API's `/health` checks process availability. `/ready` checks the local schema without model calls; its response explicitly defers live endpoint and telemetry-exporter checks to H05. Dependency failures return HTTP 503, rejected queries return 422, and execution or answer-verification failures return 500. Model diagnostic text is not logged or copied into responses.
+
+### Validation
+
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python -m ruff format --check .
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy src tests
+```
+
+Golden expectations are checked-in values, not regenerated from the application. Evaluation compares statuses, answer text, columns, ordered rows, row counts, and agent calls, and exits nonzero on any mismatch. The tests also exercise unsafe SQL, provider failures at each agent, timeouts, incorrect results, and invented explanations. The root [sample CI workflow](../../.github/workflows/sample-workload-ci.yml) runs these checks and retains the offline evaluation report.
+
+Container packaging, Azure deployment, managed-identity model access, OpenTelemetry export, load tests, and cleanup remain later hack work. The commands below those sections are planned interfaces, not implemented H04 capabilities.
+
 ## Source and deployment boundary
 
 Build the sample in `hack/sample-multi-agent-workload/` within `bobjac/finops-toolkit`. The sample is a synthetic retail operations assistant that uses multiple agents to answer natural-language questions through NL2SQL.
