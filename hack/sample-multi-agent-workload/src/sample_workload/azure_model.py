@@ -35,7 +35,8 @@ for September 2026, grouped by category, descending revenue then category, top f
 Inventory compares on_hand_quantity < reorder_point, ordered by product_id.
 Open orders have status='open' and shipped_date IS NULL.
 Fulfillment is AVG(julianday(shipped_date)-julianday(order_date)) by customer region,
-for shipped orders, ordered by region.
+for shipped orders, grouped by customer region. Use customers alias c and orders alias o.
+End the fulfillment query with ORDER BY c.region ASC; do not order by days or any aggregate.
 Missed ship dates: shipped_date > promised_ship_date OR unshipped and promised_ship_date
 before 2026-10-01, ordered by order_id.
 Required columns by pattern: category-revenue=[category,revenue];

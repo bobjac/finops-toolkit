@@ -227,12 +227,18 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
     [
         ("category-revenue", {"start": "2026-09-01", "end": "2026-10-01"}),
         ("missed-ship-date", {"asOf": "2026-10-01"}),
+        ("fulfillment-by-region", {}),
     ],
 )
 def test_live_strict_sql_parameters(pattern: str, parameters: dict[str, str]) -> None:
     async def exercise() -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
+            if pattern == "fulfillment-by-region":
+                instructions = payload["messages"][0]["content"]
+                assert (
+                    "ORDER BY c.region ASC; do not order by days or any aggregate" in instructions
+                )
             response_format = payload["response_format"]
             assert response_format["type"] == "json_schema"
             assert response_format["json_schema"]["strict"] is True

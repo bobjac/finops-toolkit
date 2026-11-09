@@ -346,6 +346,21 @@ Describe 'Sample ownership and price preflight' {
         $answer.data.rows[0][1] = 399
         { Assert-SampleAnswer -Case $case -Answer $answer } | Should -Throw
     }
+    It 'accepts fulfillment rows only in the independently expected region order' {
+        $cases = Get-Content "$PSScriptRoot/evaluation/questions.json" -Raw | ConvertFrom-Json
+        $case = $cases | Where-Object { $_.id -eq 'fulfillment-by-region' }
+        $answer = @{
+            answerStatus = $case.expectedStatus; answer = $case.expectedAnswer
+            data = ($case.expectedData | ConvertTo-Json -Depth 10 | ConvertFrom-Json)
+            evidence = @{ agentCalls = $case.expectedCalls }
+        }
+        { Assert-SampleAnswer -Case $case -Answer $answer } | Should -Not -Throw
+        $firstRow = $answer.data.rows[0]
+        $answer.data.rows[0] = $answer.data.rows[1]
+        $answer.data.rows[1] = $firstRow
+        { Assert-SampleAnswer -Case $case -Answer $answer } | Should -Throw (
+            '*rowIndex=0, columnIndex=0, mismatch=value, expectedRowMatches=1*')
+    }
     It 'diagnoses string mismatches without logging returned or expected values' {
         $cases = Get-Content "$PSScriptRoot/evaluation/questions.json" -Raw | ConvertFrom-Json
         $case = $cases | Where-Object { $_.id -eq 'fulfillment-by-region' }
