@@ -2,13 +2,14 @@
 # Licensed under the MIT License.
 
 import json
+import re
 
 from azure.core.exceptions import AzureError
 from openai import APIError, AsyncAzureOpenAI
 from pydantic import BaseModel
 
 from .contracts import Analysis, Classification, ModelUsage, QueryPlan, SchemaContext
-from .model import QUESTIONS, SCOPES, ModelDependencyError, ModelResponse
+from .model import QUERIES, QUESTIONS, SCOPES, ModelDependencyError, ModelResponse
 
 CONTRACTS: dict[str, type[BaseModel]] = {
     "coordinator": Classification,
@@ -24,7 +25,8 @@ Coordinator: classify semantically using the supported question catalog; use unk
 for unsupported questions and shipment-delay-cause for unrecorded carrier delay reasons.
 Schema agent: return exactly the approved tables for the classified pattern.
 SQL agent: generate one SQLite SELECT, with named bound parameters, no CTEs or writes.
-Use the supplied schema and only the approved tables. Revenue is SUM(quantity * unit_price)
+Use the parameter names in the output contract, the supplied schema, and only the approved tables.
+Revenue is SUM(quantity * unit_price)
 for September 2026, grouped by category, descending revenue then category, top five.
 Inventory compares on_hand_quantity < reorder_point, ordered by product_id.
 Open orders have status='open' and shipped_date IS NULL.
@@ -51,9 +53,29 @@ class AzureModel:
         contract = CONTRACTS.get(role)
         if contract is None:
             raise ModelDependencyError("The live adapter received an unsupported agent role.")
+        schema = contract.model_json_schema()
+        if role in {"schema-agent", "sql-agent"}:
+            pattern = context.get("pattern")
+            if not isinstance(pattern, str) or pattern not in SCOPES:
+                raise ModelDependencyError("The live adapter received an unsupported pattern.")
+            if role == "schema-agent":
+                schema["properties"]["tables"]["items"]["enum"] = SCOPES[pattern]
+            else:
+                # Azure strict schemas forbid free-form maps and string-length constraints.
+                names = list(dict.fromkeys(re.findall(r":([A-Za-z_]\w*)", QUERIES[pattern])))
+                schema["properties"]["parameters"] = {
+                    "type": "object",
+                    "properties": {name: {"type": "string"} for name in names},
+                    "required": names,
+                    "additionalProperties": False,
+                }
+                schema["required"] = ["sql", "parameters"]
+                schema.pop("$defs")
+                schema["properties"]["sql"].pop("minLength")
+                schema["properties"]["sql"].pop("maxLength")
         instructions = {
             "role": role,
-            "contract": contract.model_json_schema(),
+            "contract": schema,
             "catalog": QUESTIONS,
             "scopes": SCOPES,
         }
@@ -64,7 +86,14 @@ class AzureModel:
                     {"role": "system", "content": RULES + json.dumps(instructions)},
                     {"role": "user", "content": json.dumps(context)},
                 ],
-                response_format={"type": "json_object"},
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": contract.__name__,
+                        "strict": True,
+                        "schema": schema,
+                    },
+                },
                 max_completion_tokens=2048,
                 reasoning_effort="minimal",
             )
@@ -87,5 +116,7 @@ class AzureModel:
         return ModelResponse(
             choice.message.content or "",
             usage,
-            complete=choice.finish_reason == "stop" and bool(choice.message.content),
+            complete=choice.finish_reason == "stop"
+            and bool(choice.message.content)
+            and not choice.message.refusal,
         )

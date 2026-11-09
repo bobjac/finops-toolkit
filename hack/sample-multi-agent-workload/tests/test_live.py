@@ -17,13 +17,14 @@ from opentelemetry.trace import StatusCode
 from sample_workload.agents import Coordinator
 from sample_workload.api import create_app
 from sample_workload.azure_model import AzureModel
-from sample_workload.contracts import Question
+from sample_workload.contracts import QueryPlan, Question
 from sample_workload.database import Store, initialize
 from sample_workload.model import DeterministicModel
 
 
 @pytest.mark.parametrize(
-    "failure", [None, "uncached", "provider", "contract", "truncated", "empty"]
+    "failure",
+    [None, "uncached", "provider", "contract", "schema-contract", "truncated", "empty", "refusal"],
 )
 def test_live_sdk_usage_correlation_privacy_and_failure(
     tmp_path: Path,
@@ -43,6 +44,26 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
                 if f'"role": "{name}"' in payload["messages"][0]["content"]
             )
             calls.append(role)
+            response_format = payload["response_format"]
+            assert response_format["type"] == "json_schema"
+            assert response_format["json_schema"]["strict"] is True
+            schema = response_format["json_schema"]["schema"]
+            assert schema["additionalProperties"] is False
+            assert set(schema["required"]) == set(schema["properties"])
+            if role == "schema-agent":
+                assert schema["properties"]["tables"]["items"]["enum"] == [
+                    "products",
+                    "inventory",
+                ]
+            if role == "sql-agent":
+                assert schema["properties"]["parameters"] == {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                }
+                assert "minLength" not in schema["properties"]["sql"]
+                assert "maxLength" not in schema["properties"]["sql"]
             if failure == "provider" and role == "sql-agent":
                 return httpx.Response(
                     429,
@@ -56,7 +77,10 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
             content = await DeterministicModel().complete(
                 role, json.loads(payload["messages"][1]["content"])
             )
-            if failure == "contract" and role == "sql-agent":
+            if (failure, role) in {
+                ("contract", "sql-agent"),
+                ("schema-contract", "schema-agent"),
+            }:
                 content = '{"private-database-row":"private-provider-prompt-secret"}'
             return httpx.Response(
                 200,
@@ -70,7 +94,13 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
                     else [
                         {
                             "index": 0,
-                            "message": {"role": "assistant", "content": content},
+                            "message": {
+                                "role": "assistant",
+                                "content": content,
+                                "refusal": "private-provider-prompt-secret"
+                                if failure == "refusal"
+                                else None,
+                            },
                             "finish_reason": "length" if failure == "truncated" else "stop",
                         }
                     ],
@@ -167,6 +197,74 @@ def test_live_sdk_usage_correlation_privacy_and_failure(
             assert model_spans[-1].status.status_code == StatusCode.ERROR
         await sdk.close()
         provider.shutdown()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("pattern", "parameters"),
+    [
+        ("category-revenue", {"start": "2026-09-01", "end": "2026-10-01"}),
+        ("missed-ship-date", {"asOf": "2026-10-01"}),
+    ],
+)
+def test_live_strict_sql_parameters(pattern: str, parameters: dict[str, str]) -> None:
+    async def exercise() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            response_format = payload["response_format"]
+            assert response_format["type"] == "json_schema"
+            assert response_format["json_schema"]["strict"] is True
+            schema = response_format["json_schema"]["schema"]
+            assert set(schema["required"]) == {"sql", "parameters"}
+            assert schema["properties"]["parameters"] == {
+                "type": "object",
+                "properties": {name: {"type": "string"} for name in parameters},
+                "required": list(parameters),
+                "additionalProperties": False,
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "id": "chat-test",
+                    "created": 1,
+                    "object": "chat.completion",
+                    "model": "gpt-5-mini-2025-08-07",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "finish_reason": "stop",
+                            "message": {
+                                "role": "assistant",
+                                "content": await DeterministicModel().complete(
+                                    "sql-agent", {"pattern": pattern}
+                                ),
+                            },
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "total_tokens": 15,
+                    },
+                },
+            )
+
+        async def identity_token() -> str:
+            return "test-identity-token"
+
+        async with AsyncAzureOpenAI(
+            azure_endpoint="https://test.openai.azure.com",
+            api_version="2024-10-21",
+            azure_ad_token_provider=identity_token,
+            max_retries=0,
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        ) as sdk:
+            response = await AzureModel(sdk, "gpt-5-mini").complete(
+                "sql-agent", {"pattern": pattern}
+            )
+        assert response.complete
+        assert QueryPlan.model_validate_json(response.content).parameters == parameters
 
     asyncio.run(exercise())
 
