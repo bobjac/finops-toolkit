@@ -44,7 +44,7 @@ if ($groupExists) {
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $report = @{
     revision = $Revision; resourceGroup = $ConfirmResourceGroup
-    subscriptionId = $account.id; createdThisRun = -not $groupExists
+    subscriptionId = $account.id; resourceGroupExistedBefore = [bool]$groupExists
     runId = $env:GITHUB_RUN_ID; status = 'Deploying'
     prices = $prices; expiresOn = $config.expiresOn
     budgetIsBillingCap = $false; expirationDeletesResources = $false

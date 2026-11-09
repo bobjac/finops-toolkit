@@ -39,7 +39,7 @@ function Get-SamplePreview {
         if (($resourceId -ne $Scope -and
             -not $resourceId.StartsWith("$Scope/", [StringComparison]::OrdinalIgnoreCase)) -or
             $change.changeType -notin @('Create', 'Modify', 'NoChange', 'Ignore', 'Deploy')) {
-            throw 'The preview contains deletion, unsupported changes, or a resource outside the sample.'
+            throw "The preview rejected '$($change.changeType)' for '$resourceId': deletion, unsupported changes, or a resource outside the sample."
         }
     }
     return @($preview.changes | Select-Object resourceId, changeType)

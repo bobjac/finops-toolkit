@@ -23,6 +23,11 @@ Describe 'Sample ownership and price preflight' {
             $script:samplePreview.changes[0].changeType = $type
             { Get-SamplePreview -Arguments $arguments -Scope $scope } | Should -Throw
         }
+        $script:samplePreview.changes[0].after = @{ secret = 'private-preview-payload' }
+        $failure = {
+            Get-SamplePreview -Arguments $arguments -Scope $scope
+        } | Should -Throw -PassThru -ExpectedMessage '*Unsupported*containerApps/sample*'
+        $failure.Exception.Message | Should -Not -BeLike '*private-preview-payload*'
         $script:samplePreview.changes[0].changeType = 'Create'
         $script:samplePreview.changes[0].resourceId = '/subscriptions/approved/resourceGroups/ftk-dto-hack-foundation'
         { Get-SamplePreview -Arguments $arguments -Scope $scope } | Should -Throw
