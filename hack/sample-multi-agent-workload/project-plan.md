@@ -1,10 +1,10 @@
 # FinOps multi-agent sample workload project plan
 
-For the current sandbox hack, follow the [hack delivery plan](../../../project-plan.md). It selects schema-context reduction as the first demonstration scenario. The phases and `SMP-*` backlog below retain the broader workload roadmap.
+For the current sandbox hack, follow the [hack delivery plan](../project-plan.md). It selects schema-context reduction as the first demonstration scenario. The phases and `SMP-*` backlog below retain the broader workload roadmap.
 
 ## Purpose
 
-This plan delivers the [FinOps multi-agent sample workload architecture](./architecture.md) as an independently deployable repository.
+This plan delivers the [FinOps multi-agent sample workload architecture](./architecture.md) as an independently deployable component under `hack/sample-multi-agent-workload/` in `bobjac/finops-toolkit`. Application files, tests, infrastructure, and scripts belong in this directory. GitHub Actions workflows belong in the repository-root `.github/workflows/` and run sample commands with this directory as their working directory.
 
 ## Delivery principles
 
@@ -17,7 +17,7 @@ This plan delivers the [FinOps multi-agent sample workload architecture](./archi
 - Require answer-quality evaluation for agent changes.
 - Preserve the intentional answerability gap until a separate approved enhancement implements it.
 
-## Phase 0: Bootstrap the repository
+## Phase 0: Bootstrap the sample directory
 
 **Objectives**
 
@@ -25,9 +25,9 @@ This plan delivers the [FinOps multi-agent sample workload architecture](./archi
 
 **Tasks**
 
-- Initialize Python 3.12 and `pyproject.toml`.
+- Initialize Python 3.12 and `pyproject.toml` within the sample directory.
 - Add FastAPI, SQLAlchemy, Azure OpenAI, OpenTelemetry, and test dependencies.
-- Add formatting, linting, type checking, pytest, and continuous integration.
+- Add formatting, linting, type checking, pytest, and continuous integration through repository-root workflows.
 - Add Docker packaging.
 - Add PowerShell entry scripts.
 - Add local environment templates and `.gitignore`.
@@ -354,7 +354,7 @@ This plan delivers the [FinOps multi-agent sample workload architecture](./archi
 
 ## Definition of done
 
-- The repository deploys independently.
+- The sample deploys independently from its directory in this repository.
 - FinOps Toolkit is an optional external integration.
 - The sample contains at least three observable agents.
 - Supported questions pass deterministic evaluation.
@@ -365,4 +365,4 @@ This plan delivers the [FinOps multi-agent sample workload architecture](./archi
 - Token telemetry is consumable by FinOps Toolkit queries.
 - The first rightsizing experiment is repeatable.
 - All resources can be removed automatically.
-- Developers can create and test optimizations entirely in the sample repository.
+- Developers can create and test sample-specific optimizations within the sample directory; repository-root workflows coordinate experiments.

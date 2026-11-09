@@ -13,7 +13,8 @@ Use the **Sandbox connection test** workflow in `bobjac/finops-toolkit` with **m
 | Resource group naming | `ftk-dto-hack-<component>-<run-id>`; downstream deployments must use this prefix and sandbox ownership tags |
 | Expiration | February 1, 2027, at 11 PM US Eastern (`2027-02-02T04:00:00Z`) |
 | Spending ceiling | USD 300 for the sandbox; this declaration is not an Azure spending cap |
-| Sample repository | `bobjac/finops-toolkit-sample-workload`; H01 does not create it |
+| Sample repository | `bobjac/finops-toolkit`; no separate sample checkout |
+| Sample path | `hack/sample-multi-agent-workload`; application, tests, infrastructure, and scripts stay in this directory, with workflows in the repository-root `.github/workflows/` |
 | Data Explorer | Development tier, `Dev(No SLA)_Standard_E2a_v4`; an unavailable or restricted SKU blocks deployment |
 | Model ownership | A new sandbox-owned deployment; no external model endpoint or shared production resources |
 | Preferred model | `gpt-5-mini`, with `GlobalStandard` and at least one capacity unit; not yet deployed or cost-validated |

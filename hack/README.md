@@ -16,9 +16,10 @@ Start with the [hack delivery plan](./project-plan.md). It defines the demonstra
 | [Hack milestone](https://github.com/bobjac/finops-toolkit/milestone/1) | Open and completed delivery issues in the fork |
 | [Design-time optimizer architecture](./specs/repositories/finops-toolkit-design-time-optimizer/architecture.md) | Standalone optimizer boundaries, contracts, and target implementation |
 | [Design-time optimizer reference plan](./specs/repositories/finops-toolkit-design-time-optimizer/project-plan.md) | Broader `DTO-*` backlog and post-hack hardening |
-| [Sample workload architecture](./specs/repositories/sample-multi-agent-workload/architecture.md) | Independently deployable retail assistant, synthetic data, and telemetry |
-| [Sample workload reference plan](./specs/repositories/sample-multi-agent-workload/project-plan.md) | Detailed `SMP-*` workload implementation backlog |
-| [Repository blueprint index](./specs/repositories/README.md) | All five retained specification packages, including deferred work |
+| [Sample workload](./sample-multi-agent-workload/README.md) | Same-repository source and independent deployment boundary |
+| [Sample workload architecture](./sample-multi-agent-workload/architecture.md) | Independently deployable retail assistant, synthetic data, and telemetry |
+| [Sample workload reference plan](./sample-multi-agent-workload/project-plan.md) | Detailed `SMP-*` workload implementation backlog |
+| [Repository blueprint index](./specs/repositories/README.md) | Retained specification packages, including deferred work, and the sample directory |
 | [Original baseline architecture](./specs/FinOps_Design_Time_Optimizer_Baseline_Architecture.pdf) | Original PDF reference |
 
 The hack delivery plan controls delivery order and the first demonstration scenario. The reference specifications retain their broader designs; they do not make every future feature a hack requirement.
@@ -28,7 +29,7 @@ The hack delivery plan controls delivery order and the first demonstration scena
 - Keep hack issues, workflow runs, and pull requests in the fork. Do not open upstream pull requests for this work.
 - Deploy the fork's `dev` branch through the GitHub `sandbox` environment. Resolve source revisions before building or experimenting.
 - Keep the optimizer independently executable from the FinOps Toolkit repository.
-- Keep the sample independently deployable; coordinate deployments through explicit configuration and pinned artifacts or revisions.
+- Keep the sample source, tests, infrastructure, and scripts in `hack/sample-multi-agent-workload/`, independently deployable without a FinOps hub. Coordinate deployments from repository-root GitHub Actions workflows using explicit configuration and pinned artifacts or revisions.
 - Defer the autonomous harness, customer integration, and standalone optimization-provider packages.
 - Keep credentials outside this directory and source control. Use OIDC for workflows; `.tmp/` remains ignored.
 

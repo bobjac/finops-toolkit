@@ -4,9 +4,9 @@
 
 This plan tracks a fully seeded Azure sandbox and a credible design-time optimization demonstration through [tracking issue #2](https://github.com/bobjac/finops-toolkit/issues/2) and the [Design-time optimizer hack milestone](https://github.com/bobjac/finops-toolkit/milestone/1). The GitHub OIDC connection test has succeeded on the fork's `dev` branch and created an empty resource group. The full toolkit deployment, seeding, sample workload, and experiment runner are not yet verified.
 
-Work stays in `bobjac/finops-toolkit` and the separately selected sample repository. No upstream pull requests or automatic merges are part of this hack.
+All source, tracking issues, pull requests, and GitHub Actions workflows stay in `bobjac/finops-toolkit`. The sample lives under `hack/sample-multi-agent-workload/`. No upstream pull requests or automatic merges are part of this hack.
 
-Read the [optimizer architecture](./specs/repositories/finops-toolkit-design-time-optimizer/architecture.md) and [sample architecture](./specs/repositories/sample-multi-agent-workload/architecture.md) for component contracts. This plan takes precedence over their delivery order for the hack.
+Read the [optimizer architecture](./specs/repositories/finops-toolkit-design-time-optimizer/architecture.md) and [sample architecture](./sample-multi-agent-workload/architecture.md) for component contracts. This plan takes precedence over their delivery order for the hack.
 
 ## Target demonstration
 
@@ -48,7 +48,7 @@ Choose latency, error-rate, throughput, and answer-quality thresholds before run
 
 The optimizer remains in this repository and does not require the autonomous harness. The interactive agent can run in the developer environment; an always-running Azure-hosted optimizer service is not required.
 
-The sample remains independently deployable in a selected repository. The coordinating workflow uses pinned source revisions or artifacts and explicit deployment outputs, not an unversioned sibling checkout.
+The sample remains independently buildable, testable, and deployable from `hack/sample-multi-agent-workload/` without a FinOps hub. The coordinating workflows live in the repository-root `.github/workflows/` and use the same pinned repository revision for the hub and sample, with explicit deployment outputs. No separate sample repository or sibling checkout is required.
 
 Prefer a model deployment owned by the hack when quotas allow. An existing approved endpoint is an explicit external dependency: record its owner, access requirements, region, model version, and cleanup exclusion. Never imply that full teardown deletes a shared endpoint.
 
@@ -136,7 +136,7 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 ### H01: Define sandbox configuration and deployment preflight
 
-**Scope:** Define the selected subscription, tenant, region, model access, sample repository, resource naming, expiration, spending ceiling, and experiment limits.
+**Scope:** Define the selected subscription, tenant, region, model access, sample repository and directory, resource naming, expiration, spending ceiling, and experiment limits.
 
 **Acceptance:** Validate required providers, role-assignment privileges, ADX SKU availability, model permissions and quota, and workflow data-plane access. Missing prerequisites stop deployment. Identify any administrator-only setup and shared resources.
 
@@ -160,7 +160,7 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 ### H04: Implement the deterministic multi-agent sample
 
-**Scope:** Build the synthetic retail database, coordinator and specialist agents, safe read-only SQL, health endpoints, and golden question set.
+**Scope:** Build the synthetic retail database, coordinator and specialist agents, safe read-only SQL, health endpoints, and golden question set under `hack/sample-multi-agent-workload/`.
 
 **Acceptance:** Fixed-seed data and evaluation expectations are reproducible. Supported questions return correct structured answers. The intentional unsupported question reports an explicit gap. Dependency failures remain distinct from data gaps.
 
@@ -168,7 +168,7 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 ### H05: Deploy the sample and add correlated telemetry
 
-**Scope:** Independently deploy the containerized sample, monitoring, and model access. Instrument actual model calls and agent spans.
+**Scope:** Independently deploy the containerized sample, monitoring, and model access through repository-root GitHub Actions workflows using the sample's directory-local entry scripts. Instrument actual model calls and agent spans.
 
 **Acceptance:** The workload runs on Container Apps with approved identity-based model access. Telemetry includes model, tokens, experiment, variant, session, and parent/child correlation. No sensitive prompts, credentials, or database rows enter ordinary spans.
 

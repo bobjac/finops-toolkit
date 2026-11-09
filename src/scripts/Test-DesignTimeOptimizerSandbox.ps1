@@ -343,6 +343,7 @@ $report = [ordered]@{
     ExpiresOn = $config.expiresOn
     Budget = $config.budget
     SampleRepository = $config.sampleRepository
+    SamplePath = $config.samplePath
     ReadyForInfrastructureDeployment = (-not $ConfigurationOnly -and $failures.Count -eq 0)
     ReadyForDataIngestion = (-not $ConfigurationOnly -and $failures.Count -eq 0 -and $dataPlanePassed)
     Checks = $checks.ToArray()

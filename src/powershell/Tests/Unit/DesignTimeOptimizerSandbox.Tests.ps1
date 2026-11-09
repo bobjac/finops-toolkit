@@ -101,14 +101,19 @@ Describe 'Design-time optimizer sandbox preflight' {
 
     It 'Validates configuration offline without claiming deployment readiness' {
         $script:Config | ConvertTo-Json -Depth 20 | Set-Content $script:ConfigPath
-        $result = & $script:Validator -Path $script:ConfigPath -ConfigurationOnly
+        $result = & $script:Validator -Path $script:ConfigPath -ConfigurationOnly -ReportPath $script:ReportPath
         $result.ReadyForInfrastructureDeployment | Should -BeFalse
         $result.ReadyForDataIngestion | Should -BeFalse
+        $report = Get-Content $script:ReportPath -Raw | ConvertFrom-Json
+        $report.SampleRepository | Should -Be $script:Config.sampleRepository
+        $report.SamplePath | Should -Be $script:Config.samplePath
         Should -Invoke az -Times 0
     }
 
     It 'Rejects missing, invalid, and expired configuration before contacting Azure' -ForEach @(
         @{ Change = { $script:Config.Remove('region') > $null }; Expected = '*JSON Schema*' }
+        @{ Change = { $script:Config.Remove('samplePath') > $null }; Expected = '*JSON Schema*' }
+        @{ Change = { $script:Config.samplePath = '../finops-toolkit-sample-workload' }; Expected = '*JSON Schema*' }
         @{ Change = { $script:Config.budget.maximumSpend = 0 }; Expected = '*JSON Schema*' }
         @{ Change = { $script:Config.experiments.maximumParallelVariants = 3 }; Expected = '*JSON Schema*' }
         @{ Change = { $script:Config.expiresOn = '2020-01-01T00:00:00Z' }; Expected = '*expiration*' }

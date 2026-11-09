@@ -10,6 +10,7 @@
     "expiresOn",
     "budget",
     "sampleRepository",
+    "samplePath",
     "dataExplorerSku",
     "model",
     "experiments",
@@ -34,6 +35,7 @@
       }
     },
     "sampleRepository": { "type": "string", "pattern": "^bobjac/[a-zA-Z0-9_.-]+$" },
+    "samplePath": { "type": "string", "enum": ["hack/sample-multi-agent-workload"] },
     "dataExplorerSku": {
       "enum": ["Dev(No SLA)_Standard_E2a_v4", "Dev(No SLA)_Standard_D11_v2"]
     },

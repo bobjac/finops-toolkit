@@ -2,7 +2,7 @@
 
 H03 ([#5](https://github.com/bobjac/finops-toolkit/issues/5)) prepares a small, labeled historical workload and applicable prices for the [sandbox foundation](./foundation.md). It does not deploy the sample application, a model, or a workbook.
 
-**Status:** The [retention deployment](https://github.com/bobjac/finops-toolkit/actions/runs/42158132682) passed both deployment passes, 35 foundation/preflight tests, build, lint, and actual data-plane verification at revision `e3ac06094ce7d8573b45442ca793ae57f96f79dd`. The initial seed run exposed missing Git LFS sample downloads; revision `4f59c46321f9350521fdd199c4097b7e63f2d84e` fixed that. [Run 42162511562](https://github.com/bobjac/finops-toolkit/actions/runs/42162511562) passed six Python tests, 47 Pester tests, lint, and preparation, then confirmed the downloaded settings contain 36-month retention. Azure CLI download progress mixed with JSON output stopped the importer before any seed uploads. Transfer-progress suppression is awaiting publication and live retry. Both live ingestion passes remain pending. Package generation alone does not establish sandbox readiness.
+**Status:** Live-verified on November 6, 2026. [Run 42163169602](https://github.com/bobjac/finops-toolkit/actions/runs/42163169602) passed six Python tests, 48 Pester tests, PowerShell lint, actual ingestion, and replacement at revision `68c879dae903f1db282419871a42a949962ebd2d`. Both seed reports are `VerifiedAndRetained`, both report `ReadyForSeededHistory=true`, and the second reports `BaselineMatch=true`. The [retention deployment](https://github.com/bobjac/finops-toolkit/actions/runs/42158132682) also passed both deployment passes, 35 foundation/preflight tests, build, lint, and actual data-plane verification.
 
 ## Data and provenance
 
@@ -87,6 +87,36 @@ Local validation completed:
 - PowerShell syntax parsing and offline `-WhatIf`.
 - Six isolated PowerShell helper smoke checks for ADX frame parsing, partial-result rejection, failed ingestion, exclusion of preceding runs, manifest-last staging, and nonfinite totals; a real invalid-package invocation also persisted false readiness.
 
-Pester and PSScriptAnalyzer are not installed locally; their seed tests and lint are required steps before live ingestion in the new workflow. The 36-month wrapper compilation and foundation verification passed in run `42158132682`; live replacement evidence remains pending. Do not close H03 until seed checks and both live passes succeed.
+Pester and PSScriptAnalyzer are not installed locally; their seed tests and lint passed in GitHub Actions before live ingestion. The 36-month wrapper compilation and foundation verification passed in run `42158132682`.
+
+## Verified live result
+
+The successful seed workflow took about 19 minutes. Each pass uploaded three typed packages, observed three successful event-triggered ingestion runs, and queried actual hub rows. The second pass replaced the same logical dataset instead of appending duplicate history.
+
+| Actual hub result | First pass | Replacement pass |
+| --- | ---: | ---: |
+| Historical price rows | 13 | 13 |
+| Model price rows | 3 | 3 |
+| Historical cost rows | 1,878 | 1,878 |
+| Sample billed cost, USD | 2,219.315965836826 | 2,219.315965836826 |
+| Pricing quantity | 17,310.2633049883 | 17,310.2633049883 |
+| Invalid sample tags | 0 | 0 |
+| Invalid original dates | 0 | 0 |
+
+Hub floating-point totals match the typed source within the enforced tolerance and are equal across both live passes. Required prices, including original billing blocks of 10 or 100 hours and 1,000,000 tokens, passed verification in both passes. The live settings download confirmed 36-month final retention.
+
+The public retail snapshot was retrieved at `2026-11-06T04:34:37.841754Z`, with model rates USD 0.25, 0.025, and 2.00 per million tokens, effective August 1, 2025. The same snapshot was used in both passes. The workflow artifact `sandbox-seed-42163169602` contains all six actual pipeline run identifiers, package/source/schema hashes, the authoritative snapshot, manifests, and query results; its retention is seven days.
+
+Commands and results from the successful workflow:
+
+| Command | Result |
+| --- | --- |
+| `python3 -m unittest discover -s ./src/design-time-optimizer/seed -p 'test_*.py' -v` | Passed: six tests |
+| `Invoke-Pester -Path $tests -Output Detailed -PassThru` with the sandbox, foundation, and seed test files listed in `sandbox-seed.yml` | Passed: 48 tests, zero failed |
+| `Invoke-ScriptAnalyzer -Path ./src/scripts/Import-DesignTimeOptimizerSeed.ps1 -Severity Warning,Error` | Passed: zero warnings or errors |
+| `./src/scripts/Import-DesignTimeOptimizerSeed.ps1 -SeedDirectory "$env:RUNNER_TEMP/seed-first" -OutputDirectory "$env:RUNNER_TEMP/seed-evidence-first" -ConfirmResourceGroup $env:SEED_CONFIRMATION -Confirm:$false` | Passed: actual uploads, all three ingestion runs, and hub checks |
+| `./src/scripts/Import-DesignTimeOptimizerSeed.ps1 -SeedDirectory "$env:RUNNER_TEMP/seed-second" -OutputDirectory "$env:RUNNER_TEMP/seed-evidence-second" -BaselineReport "$env:RUNNER_TEMP/seed-evidence-first/seed-report.json" -ConfirmResourceGroup $env:SEED_CONFIRMATION -Confirm:$false` | Passed: replacement, all hub checks, and baseline comparison |
+
+The initial integration attempts exposed Git LFS pointers and Azure CLI transfer progress mixed into JSON. Both were fixed without weakening validation: the workflow downloads only the required samples, and transfers disable progress output. Failed reports remained not ready; neither failed attempt uploaded seed data or removed the foundation.
 
 The foundation remains billable. Its declared budget and expiration tag are not a spending cap or automatic shutdown. Use the existing confirmed foundation removal workflow when the demonstration is finished.

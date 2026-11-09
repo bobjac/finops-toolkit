@@ -1,6 +1,6 @@
 # FinOps multi-agent sample workload architecture
 
-The [hack delivery plan](../../../project-plan.md) controls the first sandbox demonstration and delivery order. This architecture retains both infrastructure and agent optimization scenarios.
+The [hack delivery plan](../project-plan.md) controls the first sandbox demonstration and delivery order. This architecture retains both infrastructure and agent optimization scenarios.
 
 ## Status
 
@@ -12,12 +12,14 @@ See the [project plan](./project-plan.md) for implementation phases, backlog, te
 
 ## Executive summary
 
-The sample repository provides a realistic but bounded environment for autonomous FinOps refactoring. It deploys an HTTP application to Azure Container Apps, uses multiple agents to translate questions into SQL and synthesize answers, and emits OpenTelemetry to Application Insights.
+The sample directory provides a realistic but bounded environment for autonomous FinOps refactoring. It deploys an HTTP application to Azure Container Apps, uses multiple agents to translate questions into SQL and synthesize answers, and emits OpenTelemetry to Application Insights.
 
-The sample and FinOps Toolkit remain independent:
+The sample and FinOps Toolkit share source control but retain independent deployment and runtime boundaries:
 
-- FinOps Toolkit is deployed from its own repository and branch.
-- The sample is deployed from its own repository.
+- Both are built from pinned revisions of `bobjac/finops-toolkit`.
+- The sample source, tests, infrastructure, and scripts live under `hack/sample-multi-agent-workload/`.
+- Repository-root `.github/workflows/` orchestrates deployment, experiments, and cleanup through separate hub and sample entry points.
+- The sample can build, test, and deploy without a FinOps hub.
 - FinOps hubs ingest Azure cost data for the sample's configured scope through Cost Management exports.
 - FinOps Toolkit tokenomics queries read the sample's Application Insights telemetry.
 - The sample never writes directly to core FinOps hub tables.
@@ -40,7 +42,7 @@ It also contains one intentional data gap so an answerability analysis agent can
 - Produce measurable Container Apps and AI consumption.
 - Support equivalent baseline and candidate deployments.
 - Flow Azure cost data into a separately deployed FinOps hub through supported exports.
-- Support optimization work entirely from the sample repository.
+- Keep sample-specific optimization changes within the sample directory.
 - Include an intentional answerability gap that can produce a decision record.
 - Remove all sample resources automatically.
 
@@ -548,6 +550,8 @@ Recommended commands:
 ./eng/Remove-Sample.ps1 -Environment dev
 ```
 
+Run these planned entry scripts from `hack/sample-multi-agent-workload/`. Repository-root GitHub Actions workflows must set that working directory or invoke the scripts through their repository-relative paths.
+
 FinOps Toolkit connection settings are optional inputs used by evidence collection, not application startup.
 
 ## First optimization experiment
@@ -622,10 +626,12 @@ Evaluate minimum replicas, concurrency, and scale-to-zero after the fixed-replic
 - Add a scheduled cleanup workflow.
 - Report remaining resources as a failed run.
 
-## Recommended repository structure
+## Recommended directory structure
+
+Sample paths below are relative to the repository root. GitHub Actions workflows belong only in the root `.github/workflows/`, with sample commands run from `hack/sample-multi-agent-workload/`.
 
 ```text
-sample-multi-agent-workload/
+hack/sample-multi-agent-workload/
   src/
     api/
     agents/
@@ -661,15 +667,17 @@ sample-multi-agent-workload/
   experiments/
     container-app-rightsize.experiment.json
     model-routing.experiment.json
-  .github/
-    workflows/
-      ci.yml
-      deploy.yml
-      experiment.yml
-      cleanup.yml
   Dockerfile
   pyproject.toml
   README.md
+  architecture.md
+  project-plan.md
+
+.github/workflows/
+  <sample-ci-workflow>.yml
+  <sandbox-deployment-workflow>.yml
+  <optimization-experiment-workflow>.yml
+  <sandbox-cleanup-workflow>.yml
 ```
 
 ## Architecture decisions to record
@@ -701,4 +709,4 @@ The sample is complete when:
 - Baseline and candidate deploy from the same Bicep modules.
 - The rightsizing experiment produces a valid comparison.
 - All sample resources can be removed automatically.
-- Optimization work can occur entirely in the sample repository.
+- Sample-specific optimization changes remain within the sample directory; repository-root workflows coordinate experiments.

@@ -4,11 +4,11 @@
 
 Follow the [hack delivery plan](../../project-plan.md) for the current `H01` through `H12` backlog, deployment order, and acceptance criteria.
 
-The design-time optimizer and sample workload packages are in scope. The autonomous harness, customer integration, and standalone optimization-provider packages are retained as deferred references, not hack dependencies.
+The design-time optimizer and [sample workload](../../sample-multi-agent-workload/README.md) are in scope. The sample specifications and future implementation live under `hack/sample-multi-agent-workload/` in this repository, not in a separate sample repository. The autonomous harness, customer integration, and standalone optimization-provider packages are retained as deferred references, not hack dependencies.
 
 ## Purpose
 
-This directory contains independent repository specification packages. Copy the contents of each package into the target repository before starting a coding-agent implementation session.
+This directory contains repository specification packages. Keep the optimizer package in this repository; copy deferred packages into their target repositories when that work begins. The sample documents have moved alongside their implementation directory.
 
 | Package | Target repository | Primary responsibility |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ This directory contains independent repository specification packages. Copy the 
 | `autonomous-optimization-harness` | New harness repository | Portable CLI, generic agents, orchestration, policy, evidence, Git integration, and publishers |
 | `customer-optimization-integration` | Customer application repository | Workload requirements, native adapters, telemetry, test data, guardrails, and approvals |
 | `optimization-provider` | Provider-specific repository | Replaceable implementation of FinOps, conversation, schema, catalog, or telemetry capabilities |
-| `sample-multi-agent-workload` | New sample application repository | Independently deployable multi-agent NL2SQL workload for FinOps and answerability experiments |
+| [Sample workload](../../sample-multi-agent-workload/README.md) | `hack/sample-multi-agent-workload/` in this repository | Independently deployable multi-agent NL2SQL workload for FinOps and answerability experiments |
 
 ## Repository independence
 
@@ -26,7 +26,7 @@ Each package includes:
 - `architecture.md` with required boundaries, contracts, security, and structure.
 - `project-plan.md` with phases, backlog, dependencies, tests, and definition of done.
 
-The packages can reference public contracts owned by another repository, but no repository requires a sibling source checkout. Integrations use released packages, containers, executables, MCP servers, or HTTPS endpoints.
+The deferred packages can reference public contracts owned by another repository, but no repository requires a sibling source checkout. Integrations use released packages, containers, executables, MCP servers, or HTTPS endpoints. The colocated optimizer and sample retain separate build and deployment entry points; repository-root GitHub Actions workflows coordinate the hack.
 
 ## Reference build order
 

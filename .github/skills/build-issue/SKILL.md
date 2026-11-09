@@ -89,7 +89,7 @@ Map each acceptance criterion to implementation and validation work. Inspect exi
 - Preserve type safety, approved scopes, and explicit error reporting.
 - Preserve sample provenance, price coverage, evaluated answer quality, and cleanup boundaries.
 - Never fabricate test results, resource readiness, telemetry, pricing, or savings.
-- For sample-repository work, agree its repository and delivery boundary first. A fork-local PR containing only a placeholder is not completion of an independently deployed sample.
+- Implement sample work under `hack/sample-multi-agent-workload/` in this fork, with GitHub Actions workflows in the repository-root `.github/workflows/`. Preserve independent sample build and deployment entry points; a placeholder is not completion of the sample.
 
 If a new design decision or blocker changes scope materially, ask before proceeding. Do not expand the issue to unrelated work.
 

@@ -8,7 +8,8 @@
     "currency": "USD",
     "maximumSpend": 300
   },
-  "sampleRepository": "bobjac/finops-toolkit-sample-workload",
+  "sampleRepository": "bobjac/finops-toolkit",
+  "samplePath": "hack/sample-multi-agent-workload",
   "dataExplorerSku": "Dev(No SLA)_Standard_E2a_v4",
   "model": {
     "ownership": "sandbox",
