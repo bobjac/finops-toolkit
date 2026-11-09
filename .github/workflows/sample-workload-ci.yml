@@ -93,6 +93,9 @@ jobs:
         run: |
           set -euo pipefail
           docker build -t sample-workload:ci .
+          docker run --rm -e IDENTITY_ENDPOINT=http://127.0.0.1:9 \
+            -e IDENTITY_HEADER=synthetic-header sample-workload:ci \
+            python -c 'from azure.identity.aio import ManagedIdentityCredential; ManagedIdentityCredential(client_id="00000000-0000-0000-0000-000000000001")'
           if docker run --rm sample-workload:ci; then
             echo 'A missing model mode must fail startup.' >&2
             exit 1
