@@ -346,6 +346,27 @@ Describe 'Sample ownership and price preflight' {
         $answer.data.rows[0][1] = 399
         { Assert-SampleAnswer -Case $case -Answer $answer } | Should -Throw
     }
+    It 'diagnoses string mismatches without logging returned or expected values' {
+        $cases = Get-Content "$PSScriptRoot/evaluation/questions.json" -Raw | ConvertFrom-Json
+        $case = $cases | Where-Object { $_.id -eq 'fulfillment-by-region' }
+        foreach ($scenario in @(
+            @{ value = 42; mismatch = 'type'; matches = 'none' }
+            @{ value = 'South'; mismatch = 'value'; matches = '1' }
+            @{ value = 'private-returned-value'; mismatch = 'value'; matches = 'none' }
+        )) {
+            $answer = @{
+                answerStatus = $case.expectedStatus; answer = $case.expectedAnswer
+                data = ($case.expectedData | ConvertTo-Json -Depth 10 | ConvertFrom-Json)
+                evidence = @{ agentCalls = $case.expectedCalls }
+            }
+            $answer.data.rows[0][0] = $scenario.value
+            $failure = {
+                Assert-SampleAnswer -Case $case -Answer $answer
+            } | Should -Throw -PassThru -ExpectedMessage (
+                "Live string value failed: fulfillment-by-region (rowIndex=0, columnIndex=0, mismatch=$($scenario.mismatch), expectedRowMatches=$($scenario.matches)).")
+            ($failure | Out-String) | Should -Not -Match 'private-returned-value|North|South|West'
+        }
+    }
     It 'rejects exported usage and attribution that differ from provider evidence' {
         $properties = [PSCustomObject]@{
             'experiment.id' = 'experiment-hash'

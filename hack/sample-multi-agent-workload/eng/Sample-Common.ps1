@@ -197,7 +197,18 @@ function Assert-SampleAnswer {
         for ($column = 0; $column -lt $expected.Count; $column++) {
             if ($expected[$column] -is [string]) {
                 if ($actual[$column] -isnot [string] -or $actual[$column] -cne $expected[$column]) {
-                    throw "Live string value failed: $($Case.id)."
+                    $mismatch = if ($actual[$column] -is [string]) { 'value' } else { 'type' }
+                    $matchingRows = @(
+                        for ($candidate = 0; $candidate -lt @($Case.expectedData.rows).Count; $candidate++) {
+                            $candidateValue = $Case.expectedData.rows[$candidate][$column]
+                            if ($actual[$column] -is [string] -and $candidateValue -is [string] -and
+                                $actual[$column] -ceq $candidateValue) {
+                                $candidate
+                            }
+                        }
+                    )
+                    $matchSummary = if ($matchingRows.Count) { $matchingRows -join ',' } else { 'none' }
+                    throw "Live string value failed: $($Case.id) (rowIndex=$row, columnIndex=$column, mismatch=$mismatch, expectedRowMatches=$matchSummary)."
                 }
             }
             elseif ($null -eq $expected[$column]) {
