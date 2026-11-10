@@ -1,0 +1,65 @@
+// Prices stay in ADX; token-bearing model spans stay in Application Insights.
+let Context = parse_json(base64_decode_tostring('{PriceContext}'));
+let HubPrices =
+    adx('{HubCluster}/{HubDatabase}').Prices_final_v1_2
+    | where x_BillingProfileId =~ 'dto-retail-public-v1' and x_SkuOfferId =~ 'PUBLIC-RETAIL'
+    | project MeterId=tostring(x_SkuMeterId), Price=ListUnitPrice, Currency=PricingCurrency,
+        Region=x_SkuRegion, Unit=x_PricingUnitDescription, BlockSize=x_PricingBlockSize,
+        EffectiveStart=x_EffectivePeriodStart, EffectiveEnd=x_EffectivePeriodEnd
+    | summarize PriceRows=count(), take_any(Price, Currency, Region, Unit, BlockSize, EffectiveStart, EffectiveEnd) by MeterId;
+let Meters =
+    print Meters=Context.meters
+    | mv-expand Meter=Meters
+    | project MeterId=tostring(Meter.meterId), Direction=tostring(Meter.direction),
+        ExpectedPrice=todouble(Meter.price), ExpectedRegion=tostring(Meter.region),
+        ExpectedStart=todatetime(Meter.effectiveStart);
+// The cross-service proxy needs an explicit join on the Application Insights side.
+let Rates =
+    Meters
+    | join kind=leftouter hint.remote=left HubPrices on MeterId
+    | extend Valid=PriceRows == 1 and Currency =~ 'USD' and Region =~ ExpectedRegion
+        and Unit == '1M' and BlockSize == 1000000 and isfinite(Price) and Price > 0
+        and abs(Price - ExpectedPrice) < 0.000000001 and EffectiveStart == ExpectedStart
+        and (isnull(EffectiveEnd) or EffectiveEnd > now())
+    | summarize InputPrice=maxif(Price, Direction == 'input' and Valid),
+        CachedPrice=maxif(Price, Direction == 'cachedInput' and Valid),
+        OutputPrice=maxif(Price, Direction == 'output' and Valid),
+        PriceStart=max(EffectiveStart);
+let TokenCosts =
+    dependencies
+    | where timestamp between (datetime({TimeRange:start}) .. datetime({TimeRange:end}))
+    | extend d=customDimensions
+    | where isnotempty(d['gen_ai.usage.input_tokens']) or isnotempty(d['gen_ai.usage.output_tokens'])
+    | extend Agent=tostring(coalesce(d['agent.name'], d['gen_ai.agent.name'], d['microsoft.gen_ai.main_agent.name'], '(unknown)')),
+        Model=tostring(coalesce(d['gen_ai.response.model'], d['gen_ai.request.model'])),
+        Session=tostring(session_Id), Experiment=tostring(d['experiment.id']),
+        Variant=tostring(d['optimization.variant']),
+        Team=tostring(d['finops.team']), CostCenter=tostring(d['finops.cost_center']),
+        InputTokens=tolong(d['gen_ai.usage.input_tokens']),
+        CachedTokens=tolong(coalesce(d['gen_ai.usage.cache_read.input_tokens'], d['gen_ai.usage.cached_input_tokens'])),
+        OutputTokens=tolong(d['gen_ai.usage.output_tokens'])
+    | where "{Experiment:escapejson}" == 'all' or Experiment == "{Experiment:escapejson}"
+    | where Variant in ('{Baseline}', '{Candidate}')
+    | summarize Copies=count(), arg_max(timestamp, *) by operation_Id, id
+    | extend ValidUsage=isnotempty(operation_Id) and isnotempty(id)
+        and InputTokens >= 0 and CachedTokens >= 0 and CachedTokens <= InputTokens and OutputTokens >= 0,
+        ModelBase=replace_regex(Model, @'-\d{4}-\d{2}-\d{2}$', ''),
+        Fresh=todatetime(Context.retrievedAt) between (ago(7d) .. now())
+    | extend InputPrice=toscalar(Rates | project InputPrice),
+        CachedPrice=toscalar(Rates | project CachedPrice),
+        OutputPrice=toscalar(Rates | project OutputPrice),
+        PriceStart=toscalar(Rates | project PriceStart)
+    | extend PriceStatus=case(Copies != 1, 'duplicate span',
+        not(coalesce(ValidUsage, false)), 'invalid or missing usage',
+        ModelBase !~ tostring(Context.model), 'unmatched model',
+        not(coalesce(Fresh, false)), 'stale or future price evidence',
+        isnull(PriceStart) or timestamp < PriceStart, 'price not effective',
+        InputTokens > CachedTokens and isnull(InputPrice), 'unpriced input',
+        CachedTokens > 0 and isnull(CachedPrice), 'unpriced cached input',
+        OutputTokens > 0 and isnull(OutputPrice), 'unpriced output', 'priced')
+    | extend EstimatedCost=iff(PriceStatus == 'priced',
+        (iff(InputTokens == CachedTokens, 0.0, (InputTokens - CachedTokens) * InputPrice)
+        + iff(CachedTokens == 0, 0.0, CachedTokens * CachedPrice)
+        + iff(OutputTokens == 0, 0.0, OutputTokens * OutputPrice)) / 1000000.0, real(null))
+    | project timestamp, Agent, Model, Session, Experiment, Variant, Team, CostCenter, InputTokens, CachedTokens,
+        OutputTokens, PriceStatus, EstimatedCost, Copies, duration;

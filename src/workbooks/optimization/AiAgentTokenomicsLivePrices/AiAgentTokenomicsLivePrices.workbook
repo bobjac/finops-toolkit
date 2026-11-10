@@ -3,110 +3,187 @@
   "items": [
     {
       "type": 1,
+      "name": "title",
       "content": {
-        "json": "## 🤖 FinOps — AI Agent Tokenomics (LIVE hub prices)\nAgent-level token cost from **gen_ai** OpenTelemetry traces (Microsoft Foundry / Agent Framework), priced with the **live FinOps Hub price data** (`Ingestion.Prices_final_v1_2`, the table behind `Prices()`) via the `adx()` cross-service proxy — no hard-coded rate card. Rates auto-update from the hub and cover every ingested model; models with no matching meter price as $0. Companion to the static-rate **AI Agent Tokenomics** workbook."
-      },
-      "name": "title"
+        "json": "## AI agent tokenomics with live hub prices\nMeasured model spans, priced against the verified public-retail meters in your FinOps hub. **Unpriced usage is not free usage.** Estimates exclude infrastructure and telemetry costs. This view does not evaluate answer quality or establish optimization savings.\n\nThe deployed price context is scoped to the seed's model, region, GlobalStandard offer, currency, and seven-day retrieval window. Other models remain unpriced. Refresh the seed and redeploy after its evidence expires. Cached tokens are a subset of total input tokens, not additional input."
+      }
+    },
+    {
+      "type": 9,
+      "name": "parameters",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          { "id": "app", "name": "ApplicationInsights", "type": 1, "isHidden": true, "value": "__APP_INSIGHTS_ID__" },
+          { "id": "cluster", "name": "HubCluster", "type": 1, "isHidden": true, "value": "__HUB_CLUSTER__" },
+          { "id": "database", "name": "HubDatabase", "type": 1, "isHidden": true, "value": "__HUB_DATABASE__" },
+          { "id": "prices", "name": "PriceContext", "type": 1, "isHidden": true, "value": "__PRICE_CONTEXT__" },
+          {
+            "id": "time",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": { "durationMs": 86400000 },
+            "typeSettings": { "selectableValues": [3600000, 86400000, 259200000, 604800000] }
+          },
+          {
+            "id": "experiment",
+            "name": "Experiment",
+            "type": 2,
+            "isRequired": true,
+            "value": "all",
+            "query": "dependencies\n| where timestamp between (datetime({TimeRange:start}) .. datetime({TimeRange:end}))\n| extend value=tostring(customDimensions['experiment.id'])\n| where isnotempty(value)\n| summarize by value\n| project value, label=value\n| union (print value='all', label='All experiments')",
+            "queryType": 0,
+            "resourceType": "microsoft.insights/components",
+            "crossComponentResources": ["{ApplicationInsights}"]
+          },
+          {
+            "id": "baseline",
+            "name": "Baseline",
+            "type": 2,
+            "isRequired": true,
+            "value": "baseline",
+            "jsonData": "[{\"value\":\"baseline\",\"label\":\"baseline\"},{\"value\":\"candidate\",\"label\":\"candidate\"}]"
+          },
+          {
+            "id": "candidate",
+            "name": "Candidate",
+            "type": 2,
+            "isRequired": true,
+            "value": "candidate",
+            "jsonData": "[{\"value\":\"baseline\",\"label\":\"baseline\"},{\"value\":\"candidate\",\"label\":\"candidate\"}]"
+          }
+        ],
+        "style": "pills"
+      }
     },
     {
       "type": 3,
+      "name": "summary",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let rc =\n    adx('https://ftkbjccus069d59.centralus.kusto.windows.net/Ingestion').Prices_final_v1_2\n    | where x_SkuMeterCategory == 'Foundry Models' and SkuMeter has 'Tokens'\n    | where SkuMeter !has 'Batch' and SkuMeter !has 'ft' and SkuMeter !has 'training' and SkuMeter !has 'aud' and SkuMeter !has 'rt' and SkuMeter !has 'transcribe' and SkuMeter !has 'tts'\n    | extend P = coalesce(x_EffectiveUnitPrice, ContractedUnitPrice, ListUnitPrice) * 1000000.0 / x_PricingBlockSize\n    | extend Direction = case(SkuMeter has_any('cached','cchd'),'Cached', SkuMeter has_any('outp','output'),'Output', SkuMeter has_any('inp','input','inpt'),'Input','Other')\n    | where Direction != 'Other'\n    | extend ModelKey = tolower(replace_regex(replace_regex(SkuMeter, @'(?i)[\\s\\-]+(cached|cchd|batch|inp|input|inpt|outp|output|glbl|regnl|tokens|dev).*$',''), @'[\\s\\.\\-_]',''))\n    | summarize InPer1M=maxif(P,Direction=='Input'), CachePer1M=maxif(P,Direction=='Cached'), OutPer1M=maxif(P,Direction=='Output') by ModelKey;\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| extend ModelKey = tolower(replace_regex(Model, @'[\\s\\.\\-_]', ''))\n        | join kind=leftouter hint.remote=left rc on ModelKey\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize ['Total cost ($)']=round(sum(Cost),4),\n        ['Input tokens']=sum(InTok), ['Output tokens']=sum(OutTok),\n        Agents=dcount(AgentId), Sessions=dcount(SessionId), Calls=count()",
-        "size": 0,
-        "title": "Summary",
+        "title": "Usage and price coverage",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize Calls=count(), Sessions=dcountif(Session, isnotempty(Session)), InputTokens=sum(InputTokens), CachedTokens=sum(CachedTokens), OutputTokens=sum(OutputTokens), UnpricedCalls=countif(PriceStatus != 'priced'), KnownPricedSubtotal=sum(EstimatedCost), DuplicateSpans=sum(Copies - 1)\n| extend CoveragePercent=iff(Calls > 0, 100.0 * (Calls - UnpricedCalls) / Calls, real(null)), EstimatedTotalUSD=iff(Calls > 0 and UnpricedCalls == 0, KnownPricedSubtotal, real(null)), Status=case(Calls == 0, 'No measured calls', UnpricedCalls > 0, 'Incomplete pricing: total unavailable', 'Public retail estimate')",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-        ],
-        "visualization": "table"
-      },
-      "name": "kpis"
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "table",
+        "size": 0
+      }
     },
     {
       "type": 3,
+      "name": "breakdown",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let rc =\n    adx('https://ftkbjccus069d59.centralus.kusto.windows.net/Ingestion').Prices_final_v1_2\n    | where x_SkuMeterCategory == 'Foundry Models' and SkuMeter has 'Tokens'\n    | where SkuMeter !has 'Batch' and SkuMeter !has 'ft' and SkuMeter !has 'training' and SkuMeter !has 'aud' and SkuMeter !has 'rt' and SkuMeter !has 'transcribe' and SkuMeter !has 'tts'\n    | extend P = coalesce(x_EffectiveUnitPrice, ContractedUnitPrice, ListUnitPrice) * 1000000.0 / x_PricingBlockSize\n    | extend Direction = case(SkuMeter has_any('cached','cchd'),'Cached', SkuMeter has_any('outp','output'),'Output', SkuMeter has_any('inp','input','inpt'),'Input','Other')\n    | where Direction != 'Other'\n    | extend ModelKey = tolower(replace_regex(replace_regex(SkuMeter, @'(?i)[\\s\\-]+(cached|cchd|batch|inp|input|inpt|outp|output|glbl|regnl|tokens|dev).*$',''), @'[\\s\\.\\-_]',''))\n    | summarize InPer1M=maxif(P,Direction=='Input'), CachePer1M=maxif(P,Direction=='Cached'), OutPer1M=maxif(P,Direction=='Output') by ModelKey;\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| extend ModelKey = tolower(replace_regex(Model, @'[\\s\\.\\-_]', ''))\n        | join kind=leftouter hint.remote=left rc on ModelKey\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Cost=round(sum(Cost),5) by AgentName\n| order by Cost desc",
-        "size": 0,
-        "title": "Effective cost by agent ($)",
+        "title": "Agent and model breakdown",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize Calls=count(), InputTokens=sum(InputTokens), CachedTokens=sum(CachedTokens), OutputTokens=sum(OutputTokens), UnpricedCalls=countif(PriceStatus != 'priced'), KnownPricedSubtotal=sum(EstimatedCost) by Agent, Model, Team, CostCenter, Experiment, Variant\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| order by KnownPricedSubtotal desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-        ],
-        "visualization": "barchart"
-      },
-      "name": "cost-by-agent"
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "table",
+        "size": 0
+      }
     },
     {
       "type": 3,
+      "name": "cost-by-agent",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let rc =\n    adx('https://ftkbjccus069d59.centralus.kusto.windows.net/Ingestion').Prices_final_v1_2\n    | where x_SkuMeterCategory == 'Foundry Models' and SkuMeter has 'Tokens'\n    | where SkuMeter !has 'Batch' and SkuMeter !has 'ft' and SkuMeter !has 'training' and SkuMeter !has 'aud' and SkuMeter !has 'rt' and SkuMeter !has 'transcribe' and SkuMeter !has 'tts'\n    | extend P = coalesce(x_EffectiveUnitPrice, ContractedUnitPrice, ListUnitPrice) * 1000000.0 / x_PricingBlockSize\n    | extend Direction = case(SkuMeter has_any('cached','cchd'),'Cached', SkuMeter has_any('outp','output'),'Output', SkuMeter has_any('inp','input','inpt'),'Input','Other')\n    | where Direction != 'Other'\n    | extend ModelKey = tolower(replace_regex(replace_regex(SkuMeter, @'(?i)[\\s\\-]+(cached|cchd|batch|inp|input|inpt|outp|output|glbl|regnl|tokens|dev).*$',''), @'[\\s\\.\\-_]',''))\n    | summarize InPer1M=maxif(P,Direction=='Input'), CachePer1M=maxif(P,Direction=='Cached'), OutPer1M=maxif(P,Direction=='Output') by ModelKey;\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| extend ModelKey = tolower(replace_regex(Model, @'[\\s\\.\\-_]', ''))\n        | join kind=leftouter hint.remote=left rc on ModelKey\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Cost=round(sum(Cost),5) by CostCenter\n| order by Cost desc",
-        "size": 0,
-        "title": "Cost by cost center",
+        "title": "Estimated model cost by agent (USD, complete groups only)",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize KnownPricedSubtotal=sum(EstimatedCost), UnpricedCalls=countif(PriceStatus != 'priced') by Agent\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| project Agent, EstimatedTotalUSD\n| order by EstimatedTotalUSD desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-        ],
-        "visualization": "piechart"
-      },
-      "name": "cost-by-cc"
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "barchart",
+        "size": 0
+      }
     },
     {
       "type": 3,
+      "name": "cost-by-cc",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let rc =\n    adx('https://ftkbjccus069d59.centralus.kusto.windows.net/Ingestion').Prices_final_v1_2\n    | where x_SkuMeterCategory == 'Foundry Models' and SkuMeter has 'Tokens'\n    | where SkuMeter !has 'Batch' and SkuMeter !has 'ft' and SkuMeter !has 'training' and SkuMeter !has 'aud' and SkuMeter !has 'rt' and SkuMeter !has 'transcribe' and SkuMeter !has 'tts'\n    | extend P = coalesce(x_EffectiveUnitPrice, ContractedUnitPrice, ListUnitPrice) * 1000000.0 / x_PricingBlockSize\n    | extend Direction = case(SkuMeter has_any('cached','cchd'),'Cached', SkuMeter has_any('outp','output'),'Output', SkuMeter has_any('inp','input','inpt'),'Input','Other')\n    | where Direction != 'Other'\n    | extend ModelKey = tolower(replace_regex(replace_regex(SkuMeter, @'(?i)[\\s\\-]+(cached|cchd|batch|inp|input|inpt|outp|output|glbl|regnl|tokens|dev).*$',''), @'[\\s\\.\\-_]',''))\n    | summarize InPer1M=maxif(P,Direction=='Input'), CachePer1M=maxif(P,Direction=='Cached'), OutPer1M=maxif(P,Direction=='Output') by ModelKey;\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| extend ModelKey = tolower(replace_regex(Model, @'[\\s\\.\\-_]', ''))\n        | join kind=leftouter hint.remote=left rc on ModelKey\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize ['Input tokens']=sum(InTok), ['Output tokens']=sum(OutTok) by Model\n| order by ['Output tokens'] desc",
-        "size": 0,
-        "title": "Tokens by model (input vs output)",
+        "title": "Estimated model cost by cost center (USD, complete groups only)",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize KnownPricedSubtotal=sum(EstimatedCost), UnpricedCalls=countif(PriceStatus != 'priced') by CostCenter\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| project CostCenter, EstimatedTotalUSD",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-        ],
-        "visualization": "barchart"
-      },
-      "name": "tokens-by-model"
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "barchart",
+        "size": 0
+      }
     },
     {
       "type": 3,
+      "name": "tokens-by-model",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let rc =\n    adx('https://ftkbjccus069d59.centralus.kusto.windows.net/Ingestion').Prices_final_v1_2\n    | where x_SkuMeterCategory == 'Foundry Models' and SkuMeter has 'Tokens'\n    | where SkuMeter !has 'Batch' and SkuMeter !has 'ft' and SkuMeter !has 'training' and SkuMeter !has 'aud' and SkuMeter !has 'rt' and SkuMeter !has 'transcribe' and SkuMeter !has 'tts'\n    | extend P = coalesce(x_EffectiveUnitPrice, ContractedUnitPrice, ListUnitPrice) * 1000000.0 / x_PricingBlockSize\n    | extend Direction = case(SkuMeter has_any('cached','cchd'),'Cached', SkuMeter has_any('outp','output'),'Output', SkuMeter has_any('inp','input','inpt'),'Input','Other')\n    | where Direction != 'Other'\n    | extend ModelKey = tolower(replace_regex(replace_regex(SkuMeter, @'(?i)[\\s\\-]+(cached|cchd|batch|inp|input|inpt|outp|output|glbl|regnl|tokens|dev).*$',''), @'[\\s\\.\\-_]',''))\n    | summarize InPer1M=maxif(P,Direction=='Input'), CachePer1M=maxif(P,Direction=='Cached'), OutPer1M=maxif(P,Direction=='Output') by ModelKey;\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| extend ModelKey = tolower(replace_regex(Model, @'[\\s\\.\\-_]', ''))\n        | join kind=leftouter hint.remote=left rc on ModelKey\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Cost=round(sum(Cost),6) by bin(timestamp, 2m), AgentName\n| order by timestamp asc",
-        "size": 0,
-        "title": "Cost over time by agent",
+        "title": "Tokens by model (cached input is included in input)",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize InputTokens=sum(InputTokens), OutputTokens=sum(OutputTokens) by Model\n| order by OutputTokens desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-        ],
-        "visualization": "timechart"
-      },
-      "name": "cost-time"
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "barchart",
+        "size": 0
+      }
     },
     {
       "type": 3,
+      "name": "cost-time",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let rc =\n    adx('https://ftkbjccus069d59.centralus.kusto.windows.net/Ingestion').Prices_final_v1_2\n    | where x_SkuMeterCategory == 'Foundry Models' and SkuMeter has 'Tokens'\n    | where SkuMeter !has 'Batch' and SkuMeter !has 'ft' and SkuMeter !has 'training' and SkuMeter !has 'aud' and SkuMeter !has 'rt' and SkuMeter !has 'transcribe' and SkuMeter !has 'tts'\n    | extend P = coalesce(x_EffectiveUnitPrice, ContractedUnitPrice, ListUnitPrice) * 1000000.0 / x_PricingBlockSize\n    | extend Direction = case(SkuMeter has_any('cached','cchd'),'Cached', SkuMeter has_any('outp','output'),'Output', SkuMeter has_any('inp','input','inpt'),'Input','Other')\n    | where Direction != 'Other'\n    | extend ModelKey = tolower(replace_regex(replace_regex(SkuMeter, @'(?i)[\\s\\-]+(cached|cchd|batch|inp|input|inpt|outp|output|glbl|regnl|tokens|dev).*$',''), @'[\\s\\.\\-_]',''))\n    | summarize InPer1M=maxif(P,Direction=='Input'), CachePer1M=maxif(P,Direction=='Cached'), OutPer1M=maxif(P,Direction=='Output') by ModelKey;\ndependencies\n| where timestamp > ago(30d)\n| extend d = parse_json(customDimensions)\n| where isnotempty(d[\"gen_ai.usage.input_tokens\"]) or isnotempty(d[\"gen_ai.usage.output_tokens\"])\n| extend AgentName = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.name\"], d[\"gen_ai.agent.name\"])),\n         AgentId   = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.id\"], d[\"gen_ai.agent.id\"])),\n         SessionId = tostring(coalesce(d[\"microsoft.gen_ai.main_agent.conversation_id\"], d[\"microsoft.session.id\"], d[\"gen_ai.conversation.id\"])),\n         Model     = tostring(coalesce(d[\"gen_ai.request.model\"], d[\"gen_ai.response.model\"])),\n         Team      = tostring(d[\"finops.team\"]),\n         CostCenter= tostring(d[\"finops.cost_center\"]),\n         InTok  = tolong(d[\"gen_ai.usage.input_tokens\"]),\n         OutTok = tolong(d[\"gen_ai.usage.output_tokens\"]),\n         Cached = tolong(coalesce(d[\"gen_ai.usage.cache_read.input_tokens\"], d[\"gen_ai.usage.cached_input_tokens\"],\"0\"))\n| where isnotempty(AgentId)\n| extend ModelKey = tolower(replace_regex(Model, @'[\\s\\.\\-_]', ''))\n        | join kind=leftouter hint.remote=left rc on ModelKey\n| extend Cost = ((InTok-Cached)/1000000.0)*InPer1M + (Cached/1000000.0)*CachePer1M + (OutTok/1000000.0)*OutPer1M\n| summarize Calls=count(), Sessions=dcount(SessionId),\n        InputTokens=sum(InTok), CachedTokens=sum(Cached), OutputTokens=sum(OutTok),\n        ['Cost ($)']=round(sum(Cost),5)\n    by AgentName, Model, Team, CostCenter\n| order by ['Cost ($)'] desc",
-        "size": 0,
-        "title": "Agent x model x cost center breakdown",
+        "title": "Estimated model cost over time (USD, complete groups only)",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize KnownPricedSubtotal=sum(EstimatedCost), UnpricedCalls=countif(PriceStatus != 'priced') by bin(timestamp, 2m), Agent\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| project timestamp, Agent, EstimatedTotalUSD\n| order by timestamp asc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
-        "crossComponentResources": [
-          "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-        ],
-        "visualization": "table"
-      },
-      "name": "breakdown"
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "timechart",
+        "size": 0
+      }
+    },
+    {
+      "type": 3,
+      "name": "unpriced",
+      "content": {
+        "version": "KqlItem/1.0",
+        "title": "Unpriced or invalid usage",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| where PriceStatus != 'priced'\n| summarize Calls=count(), InputTokens=sum(InputTokens), CachedTokens=sum(CachedTokens), OutputTokens=sum(OutputTokens) by Model, Variant, PriceStatus\n| order by Calls desc",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "table",
+        "size": 0
+      }
+    },
+    {
+      "type": 3,
+      "name": "comparison",
+      "content": {
+        "version": "KqlItem/1.0",
+        "title": "Baseline and candidate observations (not a savings decision)",
+        "query": "__TOKEN_COST_QUERY__\nlet Observed=TokenCosts\n| summarize Calls=count(), InputTokens=sum(InputTokens), OutputTokens=sum(OutputTokens), UnpricedCalls=countif(PriceStatus != 'priced'), KnownPricedSubtotal=sum(EstimatedCost), P95ModelLatency=percentile(duration, 95) by Variant;\nprint Variants=dynamic(['{Baseline}', '{Candidate}'])\n| mv-expand Variant=Variants to typeof(string)\n| summarize by Variant\n| join kind=leftouter Observed on Variant\n| project-away Variant1\n| extend Status=case(isnull(Calls), 'No measured calls', UnpricedCalls > 0, 'Incomplete pricing', 'Measured; quality and equivalence not evaluated'), EstimatedTotalUSD=iff(Calls > 0 and UnpricedCalls == 0, KnownPricedSubtotal, real(null)), CostPerModelCallUSD=iff(Calls > 0 and UnpricedCalls == 0, KnownPricedSubtotal / Calls, real(null))",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "table",
+        "size": 0
+      }
+    },
+    {
+      "type": 3,
+      "name": "provenance",
+      "content": {
+        "version": "KqlItem/1.0",
+        "title": "Price evidence",
+        "query": "print Context=parse_json(base64_decode_tostring('{PriceContext}'))\n| project Model=tostring(Context.model), Region=tostring(Context.region), DeploymentSku=tostring(Context.deploymentSku), Currency=tostring(Context.currency), RetrievedAt=todatetime(Context.retrievedAt), Source=tostring(Context.sourceUrl), SeedRevision=tostring(Context.seedRevision), Basis='Public retail estimate, not negotiated pricing'",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "crossComponentResources": ["{ApplicationInsights}"],
+        "visualization": "table",
+        "size": 0
+      }
     }
   ],
   "isLocked": false,
-  "fallbackResourceIds": [
-    "/subscriptions/987426a7-38b5-4ab6-b12b-95f5556b5ddf/resourceGroups/rg-vs-analytics-tju4/providers/microsoft.insights/components/tju4-appinsights-4c1ca4e15b31"
-  ]
+  "fallbackResourceIds": ["__APP_INSIGHTS_ID__"]
 }
