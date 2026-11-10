@@ -136,11 +136,15 @@
         "version": "KqlItem/1.0",
         "title": "Tokens by model (cached input is included in input)",
         "timeContextFromParameter": "TimeRange",
-        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize InputTokens=sum(InputTokens), OutputTokens=sum(OutputTokens) by Model\n| order by OutputTokens desc",
+        "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize InputTokens=sum(InputTokens), OutputTokens=sum(OutputTokens) by Model\n| project Model, InputTokens, OutputTokens\n| order by OutputTokens desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
         "crossComponentResources": ["{ApplicationInsights}"],
         "visualization": "barchart",
+        "chartSettings": {
+          "xAxis": "Model",
+          "yAxis": ["InputTokens", "OutputTokens"]
+        },
         "size": 0
       }
     },
