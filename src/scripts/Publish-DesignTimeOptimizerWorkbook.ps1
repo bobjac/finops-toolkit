@@ -118,6 +118,19 @@ function Get-TokenomicsContext
     }
 }
 
+function Get-TokenomicsWorkbook
+{
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$WorkbookId)
+    $uri = "https://management.azure.com${WorkbookId}?api-version=2022-04-01&canFetchContent=true"
+    $workbook = Invoke-SampleAz @('rest', '--method', 'get', '--url', $uri)
+    if ([string]::IsNullOrWhiteSpace($workbook.properties.serializedData))
+    {
+        throw 'Workbook content readback returned no serialized data.'
+    }
+    return $workbook
+}
+
 function Get-TokenomicsQuery
 {
     [CmdletBinding()]
@@ -248,7 +261,8 @@ try
     {
         throw 'Workbook deployment output is missing or outside the owned sample group.'
     }
-    $actual = Invoke-SampleAz @('resource', 'show', '--ids', $workbookId, '--api-version', '2022-04-01')
+    $actual = Get-TokenomicsWorkbook -WorkbookId $workbookId
+    $report.WorkbookRevision = $actual.tags.'ftk-source'
     if ($actual.properties.sourceId -ine $parameters.appInsightsId -or
         $actual.tags.'ftk-owner' -cne 'bobjac/finops-toolkit' -or $actual.tags.'ftk-component' -cne 'dto-workbook')
     {

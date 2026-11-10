@@ -136,6 +136,30 @@ Describe 'Workbook deployment and price evidence contracts' {
         $query | Should -Not -Match '(?i)(tolower|toupper)\([^)]*\)\s*(==|!=|=~|!~|has|contains)'
     }
 
+    It 'Requests full workbook content rather than the summary-only resource response' {
+        $script:WorkbookReadbackId = "/subscriptions/$script:Subscription/resourceGroups/fixture-sample/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001"
+        Mock Invoke-SampleAz { @{ properties = @{ serializedData = '{"items":[]}' } } }
+        $result = Get-TokenomicsWorkbook -WorkbookId $script:WorkbookReadbackId
+        $result.properties.serializedData | Should -Be '{"items":[]}'
+        Should -Invoke Invoke-SampleAz -Times 1 -ParameterFilter {
+            $Arguments.Count -eq 5 -and $Arguments[0] -ceq 'rest' -and
+            $Arguments[1] -ceq '--method' -and $Arguments[2] -ceq 'get' -and
+            $Arguments[3] -ceq '--url' -and
+            $Arguments[4] -ceq "https://management.azure.com${script:WorkbookReadbackId}?api-version=2022-04-01&canFetchContent=true"
+        }
+    }
+
+    It 'Rejects missing workbook content explicitly: <Case>' -TestCases @(
+        @{ Case = 'null'; Value = $null }
+        @{ Case = 'whitespace'; Value = '   ' }
+    ) {
+        param($Case, $Value)
+        $script:ReadbackContent = $Value
+        Mock Invoke-SampleAz { @{ properties = @{ serializedData = $script:ReadbackContent } } }
+        { Get-TokenomicsWorkbook -WorkbookId "/subscriptions/$script:Subscription/resourceGroups/fixture-sample/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001" } |
+            Should -Throw '*readback returned no serialized data*'
+    }
+
     It 'Rejects preview deletion, unrelated resource types, and foreign groups: <Kind>' -TestCases @(
         @{ Kind = 'Delete'; Path = '/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001'; Foreign = $false }
         @{ Kind = 'Create'; Path = '/providers/Microsoft.Storage/storageAccounts/fixture'; Foreign = $false }
