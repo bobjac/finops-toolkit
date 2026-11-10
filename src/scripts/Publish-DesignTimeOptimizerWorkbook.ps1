@@ -164,7 +164,7 @@ function Assert-TokenomicsPreview
         if ($change.changeType -notin @('Create', 'Modify', 'NoChange', 'Ignore') -or
             $change.resourceId -notmatch "^$([regex]::Escape($Scope))/providers/Microsoft.Insights/workbooks/[a-f0-9-]{36}$")
         {
-            throw 'Workbook preview includes an unsupported or out-of-scope change.'
+            throw "Workbook preview rejected '$($change.changeType)' for '$($change.resourceId)': unsupported or out-of-scope change."
         }
         if ($change.changeType -eq 'Modify')
         {
@@ -222,6 +222,7 @@ try
         $arguments = @('--resource-group', $sample.resourceGroup, '--name', 'hack-tokenomics-workbook',
             '--template-file', "$workbookDirectory/deploy.bicep", '--parameters', "@$parameterFile")
         $preview = Invoke-SampleAz (@('deployment', 'group', 'what-if') + $arguments + @('--no-pretty-print', '--result-format', 'FullResourcePayloads'))
+        $report.Preview = @($preview.changes | Select-Object resourceId, changeType)
         Assert-TokenomicsPreview -Preview $preview -Scope $group.id
         if (-not $PSCmdlet.ShouldProcess($group.id, 'Deploy only the owned tokenomics workbook')) { throw 'Workbook deployment was not approved.' }
         $deployment = Invoke-SampleAz (@('deployment', 'group', 'create') + $arguments)

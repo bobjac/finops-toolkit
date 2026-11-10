@@ -157,6 +157,31 @@ Describe 'Workbook deployment and price evidence contracts' {
         { Assert-TokenomicsPreview -Preview $preview -Scope $scope } | Should -Throw '*unowned workbook*'
     }
 
+    It 'Accepts an owned-scope workbook preview: <Kind>' -TestCases @(
+        @{ Kind = 'Create' }, @{ Kind = 'NoChange' }, @{ Kind = 'Modify' }
+    ) {
+        param($Kind)
+        $scope = "/subscriptions/$script:Subscription/resourceGroups/fixture-sample"
+        $preview = @{ status = 'Succeeded'; changes = @(@{
+            resourceId = "$scope/providers/microsoft.insights/workbooks/00000000-0000-4000-8000-000000000001"
+            changeType = $Kind
+        }) }
+        Mock Invoke-SampleAz { @{ tags = @{ 'ftk-owner' = 'bobjac/finops-toolkit'; 'ftk-component' = 'dto-workbook' } } }
+        { Assert-TokenomicsPreview -Preview $preview -Scope $scope } | Should -Not -Throw
+    }
+
+    It 'Identifies the rejected preview change without serializing its payload' {
+        $scope = "/subscriptions/$script:Subscription/resourceGroups/fixture-sample"
+        $id = "$scope/providers/microsoft.insights/workbooks/00000000-0000-4000-8000-000000000001"
+        $preview = @{ status = 'Succeeded'; changes = @(@{
+            resourceId = $id; changeType = 'Unsupported'; after = @{ secret = 'fixture-sensitive-payload' }
+        }) }
+        $message = try { Assert-TokenomicsPreview -Preview $preview -Scope $scope; '' } catch { $_.Exception.Message }
+        $message | Should -Match 'Unsupported'
+        $message | Should -Match ([regex]::Escape($id))
+        $message | Should -Not -Match 'fixture-sensitive-payload'
+    }
+
     It 'Rejects partial query responses instead of treating available rows as complete' {
         Mock Invoke-SampleAz { @{ error = @{ code = 'PartialError' }; tables = @(@{ name = 'PrimaryResult'; columns = @(); rows = @() }) } }
         { Invoke-TokenomicsQuery -Query 'print 1' -ApplicationInsights 'fixture' } | Should -Throw '*partial results*'
