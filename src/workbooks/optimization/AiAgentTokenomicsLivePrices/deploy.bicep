@@ -21,7 +21,8 @@ param tags object = {}
 @description('Display name shown in the Workbooks gallery.')
 param displayName string = 'AI Agent Tokenomics (live hub prices)'
 
-var source = loadJsonContent('AiAgentTokenomicsLivePrices.workbook')
+// Parse at runtime so JSON dropdown strings are not evaluated as ARM expressions.
+var source = json(loadTextContent('AiAgentTokenomicsLivePrices.workbook'))
 var query = loadTextContent('token-cost.kql')
 var items = [for item in source.items: union(item, {
   content: contains(item.content, 'query')

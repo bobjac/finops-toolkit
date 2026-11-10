@@ -83,8 +83,21 @@ jobs:
             $issues = @(Invoke-ScriptAnalyzer -Path "./src/scripts/$script-DesignTimeOptimizerWorkbook.ps1" -Severity Warning,Error)
             if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Workbook script lint failed.' }
           }
-      - name: Compile the standalone workbook
-        run: az bicep build --file src/workbooks/optimization/AiAgentTokenomicsLivePrices/deploy.bicep --stdout > "$RUNNER_TEMP/workbook-template.json"
+      - name: Compile the standalone workbook and check literal JSON preservation
+        shell: pwsh
+        run: |
+          $directory = 'src/workbooks/optimization/AiAgentTokenomicsLivePrices'
+          $compiled = az bicep build --file "$directory/deploy.bicep" --stdout
+          if ($LASTEXITCODE -ne 0) { throw 'Workbook compilation failed.' }
+          $compiled | Set-Content "$env:RUNNER_TEMP/workbook-template.json"
+          $template = $compiled | ConvertFrom-Json -AsHashtable -Depth 100
+          if ($template.variables.source -notmatch "^\[json\(variables\('([^']+)'\)\)\]$") {
+            throw 'Workbook JSON must be parsed at runtime to preserve literal dropdown arrays.'
+          }
+          $literal = $template.variables[$Matches[1]]
+          if ($literal -cne (Get-Content "$directory/AiAgentTokenomicsLivePrices.workbook" -Raw)) {
+            throw 'Compiled workbook JSON differs from the selected source.'
+          }
 
   workbook:
     needs: checks
