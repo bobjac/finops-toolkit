@@ -20,6 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $base = Get-Content "$PSScriptRoot/../workbooks/optimization/AiAgentTokenomicsLivePrices/token-cost.kql" -Raw
 $now = [DateTimeOffset]::UtcNow
+$queryWindow = @{ Start = $now.AddDays(-1); End = $now.AddMinutes(5) }
 $context = @{
     model = 'fixture-model'; retrievedAt = $now.AddMinutes(-1).ToString('o')
     meters = @(
@@ -60,11 +61,11 @@ let FixtureDependencies =
     | extend Repeats=range(1, $($case.copies), 1)
     | mv-expand Repeat=Repeats;
 "@
-    $query = Get-TokenomicsQuery -Query $base -Parameters $fixtureParameters -End $now.AddMinutes(5)
+    $query = Get-TokenomicsQuery -Query $base -Parameters $fixtureParameters @queryWindow
     $query = $query.Replace("adx('$($Parameters.hubClusterUri)/$($Parameters.hubDatabase)').Prices_final_v1_2", 'FixturePrices').
         Replace("    dependencies`n", "    FixtureDependencies`n")
     $query = "$fixtures`n$query`nTokenCosts | project PriceStatus, EstimatedCost, Copies, InputTokens, CachedTokens, OutputTokens"
-    $rows = @(Invoke-TokenomicsQuery -Query $query -ApplicationInsights $Parameters.appInsightsId)
+    $rows = @(Invoke-TokenomicsQuery -Query $query -ApplicationInsights $Parameters.appInsightsId @queryWindow)
     if ($rows.Count -ne 1 -or $rows[0].PriceStatus -cne $case.status -or
         ($case.ContainsKey('cost') -and ($null -eq $rows[0].EstimatedCost -or [Math]::Abs($rows[0].EstimatedCost - $case.cost) -gt 0.000000000001)) -or
         (-not $case.ContainsKey('cost') -and $null -ne $rows[0].EstimatedCost) -or

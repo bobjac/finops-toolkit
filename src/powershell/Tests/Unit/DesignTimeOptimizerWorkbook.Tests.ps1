@@ -221,6 +221,20 @@ Describe 'Workbook deployment and price evidence contracts' {
         Should -Invoke Invoke-SampleAz -Times 0
     }
 
+    It 'Uses explicit UTC API bounds rather than the implicit one-hour query window' {
+        Mock Invoke-SampleAz {
+            @{ tables = @(@{ name = 'PrimaryResult'; columns = @(); rows = @() }) }
+        }
+        $start = [DateTimeOffset]'2026-01-01T02:00:00+02:00'
+        $end = $start.AddDays(1)
+        $null = Invoke-TokenomicsQuery -Query 'print 1' -ApplicationInsights 'fixture' -Start $start -End $end
+        Should -Invoke Invoke-SampleAz -Times 1 -ParameterFilter {
+            $Arguments.Count -eq 11 -and $Arguments[7] -ceq '--start-time' -and
+            $Arguments[8] -ceq '2026-01-01T00:00:00.0000000Z' -and
+            $Arguments[9] -ceq '--end-time' -and $Arguments[10] -ceq '2026-01-02T00:00:00.0000000Z'
+        }
+    }
+
     It 'Rejects partial query responses instead of treating available rows as complete' {
         Mock Invoke-SampleAz { @{ error = @{ code = 'PartialError' }; tables = @(@{ name = 'PrimaryResult'; columns = @(); rows = @() }) } }
         { Invoke-TokenomicsQuery -Query 'print 1' -ApplicationInsights 'fixture' } | Should -Throw '*partial results*'

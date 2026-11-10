@@ -150,8 +150,14 @@ function Get-TokenomicsQuery
 function Invoke-TokenomicsQuery
 {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Query, [Parameter(Mandatory)][string]$ApplicationInsights)
-    $result = Invoke-SampleAz @('monitor', 'app-insights', 'query', '--app', $ApplicationInsights, '--analytics-query', $Query)
+    param(
+        [Parameter(Mandatory)][string]$Query,
+        [Parameter(Mandatory)][string]$ApplicationInsights,
+        [DateTimeOffset]$Start = [DateTimeOffset]::UtcNow.AddDays(-1),
+        [DateTimeOffset]$End = [DateTimeOffset]::UtcNow
+    )
+    $result = Invoke-SampleAz @('monitor', 'app-insights', 'query', '--app', $ApplicationInsights, '--analytics-query', $Query,
+        '--start-time', $Start.UtcDateTime.ToString('o'), '--end-time', $End.UtcDateTime.ToString('o'))
     if ($result.error -or $result.partialError -or $result.tables.Count -ne 1 -or $result.tables[0].name -ne 'PrimaryResult')
     {
         throw 'Workbook query failed or returned partial results.'
@@ -303,6 +309,9 @@ try
         }
     }
     $report.QueryResults = @{}
+    $queryEnd = [DateTimeOffset]::UtcNow
+    $queryWindow = @{ Start = $queryEnd.AddDays(-1); End = $queryEnd }
+    $report.QueryWindow = $queryWindow
     $selector = @($deployed.items | Where-Object { $_.type -eq 9 })[0].content.parameters |
         Where-Object { $_.name -ceq 'Experiment' }
     $expectedSelector = @($template.items | Where-Object { $_.type -eq 9 })[0].content.parameters |
@@ -312,8 +321,8 @@ try
     {
         throw 'Deployed workbook experiment selector differs from the selected source.'
     }
-    $selectorQuery = Get-TokenomicsQuery -Query $selector.query -Parameters $parameters
-    $report.QueryResults.experiments = @(Invoke-TokenomicsQuery -Query $selectorQuery -ApplicationInsights $parameters.appInsightsId)
+    $selectorQuery = Get-TokenomicsQuery -Query $selector.query -Parameters $parameters @queryWindow
+    $report.QueryResults.experiments = @(Invoke-TokenomicsQuery -Query $selectorQuery -ApplicationInsights $parameters.appInsightsId @queryWindow)
     foreach ($item in $template.items | Where-Object { $_.type -eq 3 })
     {
         $actualItems = @($deployed.items | Where-Object { $_.name -ceq $item.name -and $_.type -eq 3 })
@@ -323,8 +332,8 @@ try
         {
             throw "Deployed workbook query does not match the selected source: $($item.name)."
         }
-        $query = Get-TokenomicsQuery -Query $actualItems[0].content.query -Parameters $parameters
-        $report.QueryResults[$item.name] = @(Invoke-TokenomicsQuery -Query $query -ApplicationInsights $parameters.appInsightsId)
+        $query = Get-TokenomicsQuery -Query $actualItems[0].content.query -Parameters $parameters @queryWindow
+        $report.QueryResults[$item.name] = @(Invoke-TokenomicsQuery -Query $query -ApplicationInsights $parameters.appInsightsId @queryWindow)
     }
     $summary = $report.QueryResults.summary
     if ($summary.Count -ne 1 -or $summary[0].Calls -le 0 -or $summary[0].UnpricedCalls -ne 0 -or
