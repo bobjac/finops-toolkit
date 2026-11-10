@@ -136,6 +136,40 @@ Describe 'Workbook deployment and price evidence contracts' {
         $query | Should -Not -Match '(?i)(tolower|toupper)\([^)]*\)\s*(==|!=|=~|!~|has|contains)'
     }
 
+    It 'Accepts native parameter serialization and shared query time bindings' {
+        $workbook = Get-Content "$script:WorkbookDirectory/AiAgentTokenomicsLivePrices.workbook" -Raw | ConvertFrom-Json -AsHashtable
+        { Assert-TokenomicsControlContract -Workbook $workbook } | Should -Not -Throw
+    }
+
+    It 'Rejects renderer-incompatible controls before claiming workbook readiness: <Case>' -TestCases @(
+        @{ Case = 'missing parameter version'; Message = '*parameter version*' }
+        @{ Case = 'numeric time choices'; Message = '*time range choices must be duration objects*' }
+        @{ Case = 'unsupported hidden flag'; Message = '*hidden configuration*' }
+        @{ Case = 'unlisted default duration'; Message = '*default time range*' }
+        @{ Case = 'unbound selector'; Message = '*query time range binding*' }
+        @{ Case = 'unbound panel'; Message = '*query time range binding*' }
+    ) {
+        param($Case, $Message)
+        $workbook = Get-Content "$script:WorkbookDirectory/AiAgentTokenomicsLivePrices.workbook" -Raw | ConvertFrom-Json -AsHashtable
+        $controls = @($workbook.items | Where-Object { $_.type -eq 9 })[0].content.parameters
+        switch ($Case) {
+            'missing parameter version' { $controls[0].Remove('version') }
+            'numeric time choices' {
+                ($controls | Where-Object { $_.name -ceq 'TimeRange' }).typeSettings.selectableValues = @(86400000)
+            }
+            'unsupported hidden flag' {
+                $controls[0].Remove('isHiddenWhenLocked')
+                $controls[0].isHidden = $true
+            }
+            'unlisted default duration' {
+                ($controls | Where-Object { $_.name -ceq 'TimeRange' }).value.durationMs = 12345
+            }
+            'unbound selector' { ($controls | Where-Object { $_.name -ceq 'Experiment' }).Remove('timeContextFromParameter') }
+            'unbound panel' { @($workbook.items | Where-Object { $_.type -eq 3 })[0].content.Remove('timeContextFromParameter') }
+        }
+        { Assert-TokenomicsControlContract -Workbook $workbook } | Should -Throw $Message
+    }
+
     It 'Requests full workbook content rather than the summary-only resource response' {
         $script:WorkbookReadbackId = "/subscriptions/$script:Subscription/resourceGroups/fixture-sample/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001"
         Mock Invoke-SampleAz { @{ properties = @{ serializedData = '{"items":[]}' } } }

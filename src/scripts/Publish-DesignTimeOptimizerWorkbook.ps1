@@ -131,6 +131,55 @@ function Get-TokenomicsWorkbook
     return $workbook
 }
 
+function Assert-TokenomicsControlContract
+{
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Workbook)
+    $steps = @($Workbook.items | Where-Object { $_.type -eq 9 })
+    if ($steps.Count -ne 1) { throw 'Workbook must contain one parameter step.' }
+    $controls = $steps[0].content.parameters
+    foreach ($control in $controls)
+    {
+        if ($control.version -cne 'KqlParameterItem/1.0')
+        {
+            throw "Workbook parameter version is missing or unsupported: $($control.name)."
+        }
+    }
+    foreach ($name in 'ApplicationInsights', 'HubCluster', 'HubDatabase', 'PriceContext')
+    {
+        $hidden = @($controls | Where-Object { $_.name -ceq $name })
+        if ($hidden.Count -ne 1 -or $hidden[0].isHiddenWhenLocked -ne $true)
+        {
+            throw "Workbook hidden configuration must use isHiddenWhenLocked: $name."
+        }
+    }
+    $time = @($controls | Where-Object { $_.name -ceq 'TimeRange' })
+    if ($time.Count -ne 1 -or $time[0].type -ne 4 -or $time[0].typeSettings.selectableValues.Count -eq 0)
+    {
+        throw 'Workbook time range picker is missing its choices.'
+    }
+    foreach ($choice in $time[0].typeSettings.selectableValues)
+    {
+        if ($choice -isnot [System.Collections.IDictionary] -or $choice.durationMs -le 0)
+        {
+            throw 'Workbook time range choices must be duration objects, not raw numbers.'
+        }
+    }
+    if ($time[0].value.durationMs -notin $time[0].typeSettings.selectableValues.durationMs)
+    {
+        throw 'Workbook default time range must be one of the picker choices.'
+    }
+    $queries = @($Workbook.items | Where-Object { $_.type -eq 3 } | ForEach-Object { $_.content }) +
+        @($controls | Where-Object { $_.query })
+    foreach ($query in $queries)
+    {
+        if ($query.timeContextFromParameter -cne 'TimeRange')
+        {
+            throw 'Workbook query time range binding must match the TimeRange parameter.'
+        }
+    }
+}
+
 function Get-TokenomicsQuery
 {
     [CmdletBinding()]
@@ -281,6 +330,7 @@ try
     {
         throw 'Deployed workbook panels or fallback scope do not match the selected source.'
     }
+    Assert-TokenomicsControlContract -Workbook $deployed
     $defaults = @{}
     foreach ($parameter in @($deployed.items | Where-Object { $_.type -eq 9 })[0].content.parameters)
     {

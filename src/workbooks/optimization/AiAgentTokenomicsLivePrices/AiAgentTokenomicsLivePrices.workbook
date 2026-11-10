@@ -14,31 +14,42 @@
       "content": {
         "version": "KqlParameterItem/1.0",
         "parameters": [
-          { "id": "app", "name": "ApplicationInsights", "type": 1, "isHidden": true, "value": "__APP_INSIGHTS_ID__" },
-          { "id": "cluster", "name": "HubCluster", "type": 1, "isHidden": true, "value": "__HUB_CLUSTER__" },
-          { "id": "database", "name": "HubDatabase", "type": 1, "isHidden": true, "value": "__HUB_DATABASE__" },
-          { "id": "prices", "name": "PriceContext", "type": 1, "isHidden": true, "value": "__PRICE_CONTEXT__" },
+          { "id": "app", "version": "KqlParameterItem/1.0", "name": "ApplicationInsights", "type": 1, "isHiddenWhenLocked": true, "value": "__APP_INSIGHTS_ID__" },
+          { "id": "cluster", "version": "KqlParameterItem/1.0", "name": "HubCluster", "type": 1, "isHiddenWhenLocked": true, "value": "__HUB_CLUSTER__" },
+          { "id": "database", "version": "KqlParameterItem/1.0", "name": "HubDatabase", "type": 1, "isHiddenWhenLocked": true, "value": "__HUB_DATABASE__" },
+          { "id": "prices", "version": "KqlParameterItem/1.0", "name": "PriceContext", "type": 1, "isHiddenWhenLocked": true, "value": "__PRICE_CONTEXT__" },
           {
             "id": "time",
+            "version": "KqlParameterItem/1.0",
             "name": "TimeRange",
             "type": 4,
             "isRequired": true,
             "value": { "durationMs": 86400000 },
-            "typeSettings": { "selectableValues": [3600000, 86400000, 259200000, 604800000] }
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 3600000 },
+                { "durationMs": 86400000 },
+                { "durationMs": 259200000 },
+                { "durationMs": 604800000 }
+              ]
+            }
           },
           {
             "id": "experiment",
+            "version": "KqlParameterItem/1.0",
             "name": "Experiment",
             "type": 2,
             "isRequired": true,
             "value": "all",
             "query": "dependencies\n| where timestamp between (datetime({TimeRange:start}) .. datetime({TimeRange:end}))\n| extend value=tostring(customDimensions['experiment.id'])\n| where isnotempty(value)\n| summarize by value\n| project value, label=value\n| union (print value='all', label='All experiments')",
+            "timeContextFromParameter": "TimeRange",
             "queryType": 0,
             "resourceType": "microsoft.insights/components",
             "crossComponentResources": ["{ApplicationInsights}"]
           },
           {
             "id": "baseline",
+            "version": "KqlParameterItem/1.0",
             "name": "Baseline",
             "type": 2,
             "isRequired": true,
@@ -47,6 +58,7 @@
           },
           {
             "id": "candidate",
+            "version": "KqlParameterItem/1.0",
             "name": "Candidate",
             "type": 2,
             "isRequired": true,
@@ -63,6 +75,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Usage and price coverage",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize Calls=count(), Sessions=dcountif(Session, isnotempty(Session)), InputTokens=sum(InputTokens), CachedTokens=sum(CachedTokens), OutputTokens=sum(OutputTokens), UnpricedCalls=countif(PriceStatus != 'priced'), KnownPricedSubtotal=sum(EstimatedCost), DuplicateSpans=sum(Copies - 1)\n| extend CoveragePercent=iff(Calls > 0, 100.0 * (Calls - UnpricedCalls) / Calls, real(null)), EstimatedTotalUSD=iff(Calls > 0 and UnpricedCalls == 0, KnownPricedSubtotal, real(null)), Status=case(Calls == 0, 'No measured calls', UnpricedCalls > 0, 'Incomplete pricing: total unavailable', 'Public retail estimate')",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -77,6 +90,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Agent and model breakdown",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize Calls=count(), InputTokens=sum(InputTokens), CachedTokens=sum(CachedTokens), OutputTokens=sum(OutputTokens), UnpricedCalls=countif(PriceStatus != 'priced'), KnownPricedSubtotal=sum(EstimatedCost) by Agent, Model, Team, CostCenter, Experiment, Variant\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| order by KnownPricedSubtotal desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -91,6 +105,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Estimated model cost by agent (USD, complete groups only)",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize KnownPricedSubtotal=sum(EstimatedCost), UnpricedCalls=countif(PriceStatus != 'priced') by Agent\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| project Agent, EstimatedTotalUSD\n| order by EstimatedTotalUSD desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -105,6 +120,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Estimated model cost by cost center (USD, complete groups only)",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize KnownPricedSubtotal=sum(EstimatedCost), UnpricedCalls=countif(PriceStatus != 'priced') by CostCenter\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| project CostCenter, EstimatedTotalUSD",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -119,6 +135,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Tokens by model (cached input is included in input)",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize InputTokens=sum(InputTokens), OutputTokens=sum(OutputTokens) by Model\n| order by OutputTokens desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -133,6 +150,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Estimated model cost over time (USD, complete groups only)",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| summarize KnownPricedSubtotal=sum(EstimatedCost), UnpricedCalls=countif(PriceStatus != 'priced') by bin(timestamp, 2m), Agent\n| extend EstimatedTotalUSD=iff(UnpricedCalls == 0, KnownPricedSubtotal, real(null))\n| project timestamp, Agent, EstimatedTotalUSD\n| order by timestamp asc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -147,6 +165,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Unpriced or invalid usage",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nTokenCosts\n| where PriceStatus != 'priced'\n| summarize Calls=count(), InputTokens=sum(InputTokens), CachedTokens=sum(CachedTokens), OutputTokens=sum(OutputTokens) by Model, Variant, PriceStatus\n| order by Calls desc",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -161,6 +180,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Baseline and candidate observations (not a savings decision)",
+        "timeContextFromParameter": "TimeRange",
         "query": "__TOKEN_COST_QUERY__\nlet Observed=TokenCosts\n| summarize Calls=count(), InputTokens=sum(InputTokens), OutputTokens=sum(OutputTokens), UnpricedCalls=countif(PriceStatus != 'priced'), KnownPricedSubtotal=sum(EstimatedCost), P95ModelLatency=percentile(duration, 95) by Variant;\nprint Variants=dynamic(['{Baseline}', '{Candidate}'])\n| mv-expand Variant=Variants to typeof(string)\n| summarize by Variant\n| join kind=leftouter Observed on Variant\n| project-away Variant1\n| extend Status=case(isnull(Calls), 'No measured calls', UnpricedCalls > 0, 'Incomplete pricing', 'Measured; quality and equivalence not evaluated'), EstimatedTotalUSD=iff(Calls > 0 and UnpricedCalls == 0, KnownPricedSubtotal, real(null)), CostPerModelCallUSD=iff(Calls > 0 and UnpricedCalls == 0, KnownPricedSubtotal / Calls, real(null))",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
@@ -175,6 +195,7 @@
       "content": {
         "version": "KqlItem/1.0",
         "title": "Price evidence",
+        "timeContextFromParameter": "TimeRange",
         "query": "print Context=parse_json(base64_decode_tostring('{PriceContext}'))\n| project Model=tostring(Context.model), Region=tostring(Context.region), DeploymentSku=tostring(Context.deploymentSku), Currency=tostring(Context.currency), RetrievedAt=todatetime(Context.retrievedAt), Source=tostring(Context.sourceUrl), SeedRevision=tostring(Context.seedRevision), Basis='Public retail estimate, not negotiated pricing'",
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
