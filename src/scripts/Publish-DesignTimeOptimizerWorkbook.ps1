@@ -190,9 +190,10 @@ function Get-TokenomicsQuery
         [DateTimeOffset]$End = [DateTimeOffset]::UtcNow
     )
     $context = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($Parameters.priceContext | ConvertTo-Json -Depth 15 -Compress)))
+    # Match workbook expansion so validation also rejects nested datetime() calls.
     $Query.Replace('{HubCluster}', $Parameters.hubClusterUri).Replace('{HubDatabase}', $Parameters.hubDatabase).
-        Replace('{PriceContext}', $context).Replace('{TimeRange:start}', $Start.UtcDateTime.ToString('o')).
-        Replace('{TimeRange:end}', $End.UtcDateTime.ToString('o')).Replace('{Experiment:escapejson}', 'all').
+        Replace('{PriceContext}', $context).Replace('{TimeRange:start}', "datetime($($Start.UtcDateTime.ToString('o')))").
+        Replace('{TimeRange:end}', "datetime($($End.UtcDateTime.ToString('o')))").Replace('{Experiment:escapejson}', 'all').
         Replace('{Baseline}', 'baseline').Replace('{Candidate}', 'candidate')
 }
 

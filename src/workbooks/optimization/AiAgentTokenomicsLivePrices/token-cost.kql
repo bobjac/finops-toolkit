@@ -27,7 +27,7 @@ let Rates =
         PriceStart=max(EffectiveStart);
 let TokenCosts =
     dependencies
-    | where timestamp between (datetime({TimeRange:start}) .. datetime({TimeRange:end}))
+    | where timestamp between ({TimeRange:start} .. {TimeRange:end})
     | extend d=customDimensions
     | where isnotempty(d['gen_ai.usage.input_tokens']) or isnotempty(d['gen_ai.usage.output_tokens'])
     | extend Agent=tostring(coalesce(d['agent.name'], d['gen_ai.agent.name'], d['microsoft.gen_ai.main_agent.name'], '(unknown)')),

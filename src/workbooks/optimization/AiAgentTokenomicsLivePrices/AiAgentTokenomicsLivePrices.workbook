@@ -41,7 +41,7 @@
             "type": 2,
             "isRequired": true,
             "value": "all",
-            "query": "dependencies\n| where timestamp between (datetime({TimeRange:start}) .. datetime({TimeRange:end}))\n| extend value=tostring(customDimensions['experiment.id'])\n| where isnotempty(value)\n| summarize by value\n| project value, label=value\n| union (print value='all', label='All experiments')",
+            "query": "dependencies\n| where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| extend value=tostring(customDimensions['experiment.id'])\n| where isnotempty(value)\n| summarize by value\n| project value, label=value\n| union (print value='all', label='All experiments')",
             "timeContextFromParameter": "TimeRange",
             "queryType": 0,
             "resourceType": "microsoft.insights/components",

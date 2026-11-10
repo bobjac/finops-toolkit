@@ -129,6 +129,27 @@ Describe 'Workbook deployment and price evidence contracts' {
         $query | Should -Not -Match "d\['session.id'\]"
     }
 
+    It 'Expands raw time parameters, selector, and pricing queries as native UTC datetime literals' {
+        $parameters = Get-TokenomicsContext @script:Arguments
+        $workbook = Get-Content "$script:WorkbookDirectory/AiAgentTokenomicsLivePrices.workbook" -Raw | ConvertFrom-Json -AsHashtable
+        $selector = @($workbook.items | Where-Object { $_.type -eq 9 })[0].content.parameters |
+            Where-Object { $_.name -ceq 'Experiment' }
+        $start = [DateTimeOffset]'2026-01-01T02:00:00+02:00'
+        $end = $start.AddDays(1)
+        $sources = @(
+            'print Start={TimeRange:start}, End={TimeRange:end}'
+            $selector.query
+            (Get-Content "$script:WorkbookDirectory/token-cost.kql" -Raw)
+        )
+        foreach ($source in $sources) {
+            $query = Get-TokenomicsQuery -Query $source -Parameters $parameters -Start $start -End $end
+            $query | Should -Match ([regex]::Escape('datetime(2026-01-01T00:00:00.0000000Z)'))
+            $query | Should -Match ([regex]::Escape('datetime(2026-01-02T00:00:00.0000000Z)'))
+            $query | Should -Not -Match 'datetime\(\s*datetime\('
+            $query | Should -Not -Match '\{TimeRange:(start|end)\}'
+        }
+    }
+
     It 'Keeps the shared cross-service query within repository KQL conventions' {
         $query = Get-Content "$script:WorkbookDirectory/token-cost.kql" -Raw
         $query | Should -Not -Match '\|\s*join\b(?![^(\r\n]*\bkind\s*=)'
