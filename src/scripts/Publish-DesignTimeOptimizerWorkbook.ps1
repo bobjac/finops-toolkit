@@ -161,7 +161,12 @@ function Assert-TokenomicsPreview
     if ($Preview.status -ne 'Succeeded' -or $null -eq $Preview.changes) { throw 'Workbook preview did not succeed.' }
     foreach ($change in $Preview.changes)
     {
-        if ($change.changeType -notin @('Create', 'Modify', 'NoChange', 'Ignore') -or
+        if ($change.changeType -eq 'Ignore' -and
+            ([string]$change.resourceId).StartsWith("$Scope/providers/", [StringComparison]::OrdinalIgnoreCase))
+        {
+            continue
+        }
+        if ($change.changeType -notin @('Create', 'Modify', 'NoChange') -or
             $change.resourceId -notmatch "^$([regex]::Escape($Scope))/providers/Microsoft.Insights/workbooks/[a-f0-9-]{36}$")
         {
             throw "Workbook preview rejected '$($change.changeType)' for '$($change.resourceId)': unsupported or out-of-scope change."
@@ -219,7 +224,7 @@ try
     if ($Operation -eq 'Deploy')
     {
         if ($ConfirmResourceGroup -cne $sample.resourceGroup) { throw 'Confirm the exact sample resource group before workbook deployment.' }
-        $arguments = @('--resource-group', $sample.resourceGroup, '--name', 'hack-tokenomics-workbook',
+        $arguments = @('--resource-group', $sample.resourceGroup, '--name', 'hack-tokenomics-workbook', '--mode', 'Incremental',
             '--template-file', "$workbookDirectory/deploy.bicep", '--parameters', "@$parameterFile")
         $preview = Invoke-SampleAz (@('deployment', 'group', 'what-if') + $arguments + @('--no-pretty-print', '--result-format', 'FullResourcePayloads'))
         $report.Preview = @($preview.changes | Select-Object resourceId, changeType)

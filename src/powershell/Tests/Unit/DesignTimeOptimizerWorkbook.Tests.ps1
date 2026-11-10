@@ -139,7 +139,9 @@ Describe 'Workbook deployment and price evidence contracts' {
     It 'Rejects preview deletion, unrelated resource types, and foreign groups: <Kind>' -TestCases @(
         @{ Kind = 'Delete'; Path = '/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001'; Foreign = $false }
         @{ Kind = 'Create'; Path = '/providers/Microsoft.Storage/storageAccounts/fixture'; Foreign = $false }
+        @{ Kind = 'Modify'; Path = '/providers/Microsoft.Storage/storageAccounts/fixture'; Foreign = $false }
         @{ Kind = 'Create'; Path = '/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001'; Foreign = $true }
+        @{ Kind = 'Ignore'; Path = '/providers/Microsoft.Storage/storageAccounts/fixture'; Foreign = $true }
     ) {
         param($Kind, $Path, $Foreign)
         $scope = "/subscriptions/$script:Subscription/resourceGroups/fixture-sample"
@@ -180,6 +182,19 @@ Describe 'Workbook deployment and price evidence contracts' {
         $message | Should -Match 'Unsupported'
         $message | Should -Match ([regex]::Escape($id))
         $message | Should -Not -Match 'fixture-sensitive-payload'
+    }
+
+    It 'Accepts ignored existing resources alongside the one workbook create without mutating them' {
+        $scope = "/subscriptions/$script:Subscription/resourceGroups/fixture-sample"
+        $preview = @{ status = 'Succeeded'; changes = @(
+            @{ resourceId = "$scope/providers/microsoft.alertsmanagement/smartDetectorAlertRules/Failure Anomalies - fixture"; changeType = 'Ignore' }
+            @{ resourceId = "$scope/providers/Microsoft.App/containerApps/fixture"; changeType = 'Ignore' }
+            @{ resourceId = "$scope/providers/Microsoft.CognitiveServices/accounts/fixture"; changeType = 'Ignore' }
+            @{ resourceId = "$scope/providers/Microsoft.Insights/workbooks/00000000-0000-4000-8000-000000000001"; changeType = 'Create' }
+        ) }
+        Mock Invoke-SampleAz { throw 'Ignored inventory must not trigger Azure operations.' }
+        { Assert-TokenomicsPreview -Preview $preview -Scope $scope } | Should -Not -Throw
+        Should -Invoke Invoke-SampleAz -Times 0
     }
 
     It 'Rejects partial query responses instead of treating available rows as complete' {
