@@ -91,12 +91,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Workbook compilation failed.' }
           $compiled | Set-Content "$env:RUNNER_TEMP/workbook-template.json"
           $template = $compiled | ConvertFrom-Json -AsHashtable -Depth 100
-          if ($template.variables.source -notmatch "^\[json\(variables\('([^']+)'\)\)\]$") {
-            throw 'Workbook JSON must be parsed at runtime to preserve literal dropdown arrays.'
+          if ($template.variables.ContainsKey('copy')) {
+            throw 'Workbook JSON must not pass through ARM variable copy evaluation.'
           }
-          $literal = $template.variables[$Matches[1]]
+          $literal = $template.variables.source
           if ($literal -cne (Get-Content "$directory/AiAgentTokenomicsLivePrices.workbook" -Raw)) {
             throw 'Compiled workbook JSON differs from the selected source.'
+          }
+          $query = Get-Content "$directory/token-cost.kql" -Raw
+          if ($template.variables.query -cne $query) { throw 'Compiled query differs from the selected source.' }
+          $encodedQuery = ConvertTo-Json -InputObject @($query) -Compress
+          $escapedQuery = $encodedQuery.Substring(2, $encodedQuery.Length - 4)
+          $rendered = $literal.Replace('__TOKEN_COST_QUERY__', $escapedQuery) | ConvertFrom-Json -Depth 100
+          $original = $literal | ConvertFrom-Json -Depth 100
+          foreach ($item in $original.items | Where-Object type -eq 3) {
+            $actual = @($rendered.items | Where-Object name -CEQ $item.name)
+            if ($actual.Count -ne 1 -or $actual[0].content.query -cne $item.content.query.Replace('__TOKEN_COST_QUERY__', $query)) {
+              throw 'JSON query encoding changed a workbook panel.'
+            }
+          }
+          $controls = @($rendered.items | Where-Object type -eq 9)[0].content.parameters
+          foreach ($name in 'Baseline', 'Candidate') {
+            $control = @($controls | Where-Object name -CEQ $name)
+            $options = @($control[0].jsonData | ConvertFrom-Json)
+            if ($control.Count -ne 1 -or $options.Count -ne 2 -or $control[0].value -cnotin $options.value) {
+              throw 'JSON rendering changed a variant dropdown.'
+            }
           }
 
   workbook:

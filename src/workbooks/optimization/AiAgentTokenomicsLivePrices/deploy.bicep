@@ -21,16 +21,14 @@ param tags object = {}
 @description('Display name shown in the Workbooks gallery.')
 param displayName string = 'AI Agent Tokenomics (live hub prices)'
 
-// Parse at runtime so JSON dropdown strings are not evaluated as ARM expressions.
-var source = json(loadTextContent('AiAgentTokenomicsLivePrices.workbook'))
+// Keep workbook data out of ARM object/copy evaluation, including literal dropdown arrays.
+var source = loadTextContent('AiAgentTokenomicsLivePrices.workbook')
 var query = loadTextContent('token-cost.kql')
-var items = [for item in source.items: union(item, {
-  content: contains(item.content, 'query')
-    ? union(item.content, { query: replace(item.content.query, '__TOKEN_COST_QUERY__', query) })
-    : item.content
-})]
-var configured = union(source, { items: items })
-var withApplication = replace(string(configured), '__APP_INSIGHTS_ID__', appInsightsId)
+// JSON-encode the query, then remove only the enclosing [" and "] delimiters.
+var encodedQuery = string([query])
+var escapedQuery = substring(encodedQuery, 2, max(0, length(encodedQuery) - 4))
+var withQuery = replace(source, '__TOKEN_COST_QUERY__', escapedQuery)
+var withApplication = replace(withQuery, '__APP_INSIGHTS_ID__', appInsightsId)
 var withCluster = replace(withApplication, '__HUB_CLUSTER__', hubClusterUri)
 var withDatabase = replace(withCluster, '__HUB_DATABASE__', hubDatabase)
 var serialized = replace(withDatabase, '__PRICE_CONTEXT__', base64(string(priceContext)))

@@ -226,6 +226,7 @@ try
         if ($ConfirmResourceGroup -cne $sample.resourceGroup) { throw 'Confirm the exact sample resource group before workbook deployment.' }
         $arguments = @('--resource-group', $sample.resourceGroup, '--name', 'hack-tokenomics-workbook', '--mode', 'Incremental',
             '--template-file', "$workbookDirectory/deploy.bicep", '--parameters', "@$parameterFile")
+        $null = Invoke-SampleAz (@('deployment', 'group', 'validate') + $arguments)
         $preview = Invoke-SampleAz (@('deployment', 'group', 'what-if') + $arguments + @('--no-pretty-print', '--result-format', 'FullResourcePayloads'))
         $report.Preview = @($preview.changes | Select-Object resourceId, changeType)
         Assert-TokenomicsPreview -Preview $preview -Scope $group.id
