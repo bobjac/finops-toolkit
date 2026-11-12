@@ -1,0 +1,9 @@
+// Bounded H03 sample history, not actual spend for the live sandbox.
+// Only the context adapter substitutes validated UTC dates and fixed grouping.
+Costs()
+| where x_BillingProfileId =~ 'dto-history-v1'
+| where tostring(Tags['ftk-dataset']) =~ 'sample-history-v1'
+| where ChargePeriodStart >= datetime(__START__) and ChargePeriodStart < datetime(__END__)
+| summarize BilledCost=sum(BilledCost), Rows=count(), DataThrough=max(ChargePeriodEnd) by __GROUPING__
+| order by BilledCost desc
+| take 201

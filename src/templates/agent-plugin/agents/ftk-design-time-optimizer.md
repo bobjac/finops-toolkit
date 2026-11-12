@@ -65,6 +65,7 @@ Before proposing a change:
 - Confirm the workload unit measures completed successful work.
 - Retrieve scoped historical cost and recommendations using approved FinOps Toolkit queries.
 - Record source, scope, currency, freshness, and pricing basis.
+- For the hack sandbox, use the bounded context adapter documented in the design-time optimizer skill. Keep its sample-history data scope separate from the live resource scope, preserve empty-result warnings, and stop on provider or required-price failures.
 
 ### 3. Select one optimization
 

@@ -194,6 +194,8 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 **Scope:** Reuse the existing Azure MCP integration and query catalog where appropriate. Expose scoped cost summary, resource cost, recommendation, and pricing context.
 
+**Execution order:** The presenter selected H08 (#10) next on November 12, 2026, ahead of the independently ready H07 (#9), to prioritize the PoC optimization loop. This does not change either issue's scope or dependencies.
+
 **Acceptance:** Responses preserve scope, source, freshness, and warnings. Out-of-scope requests fail. Historical sample IDs are not deployment targets. Empty recommendations are explicit, and provider failures never silently return fixture data.
 
 **Validation:** Contract tests cover scope enforcement, empty results, provider failures, stale prices, units, and provenance. Verify the coding agent can retrieve the sandbox context through approved read-only paths.

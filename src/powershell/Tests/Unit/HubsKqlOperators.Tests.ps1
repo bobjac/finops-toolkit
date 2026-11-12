@@ -21,6 +21,7 @@ Describe 'HubsKqlOperators' {
         $kqlDirs = @(
             (Join-Path $repoRoot 'src/templates/finops-hub/modules/Microsoft.FinOpsHubs/Analytics/scripts'),
             (Join-Path $repoRoot 'src/queries/catalog')
+            (Join-Path $repoRoot 'src/design-time-optimizer/context')
         )
         $kqlFiles = @($kqlDirs | ForEach-Object { Get-ChildItem -Path $_ -Filter '*.kql' -ErrorAction SilentlyContinue } | ForEach-Object {
                 @{ Name = $_.Name; FullName = $_.FullName }
@@ -66,6 +67,7 @@ Describe 'HubsKqlOperators' {
         $kqlFileCount = @(
             (Join-Path $repoRoot 'src/templates/finops-hub/modules/Microsoft.FinOpsHubs/Analytics/scripts'),
             (Join-Path $repoRoot 'src/queries/catalog')
+            (Join-Path $repoRoot 'src/design-time-optimizer/context')
         ) | ForEach-Object { Get-ChildItem -Path $_ -Filter '*.kql' -ErrorAction SilentlyContinue } | Measure-Object | Select-Object -ExpandProperty Count
 
         # contains is only allowed where the needle may be fused inside a larger token (substring semantics required).

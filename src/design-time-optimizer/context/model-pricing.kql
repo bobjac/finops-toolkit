@@ -1,0 +1,7 @@
+// Required rates are checked against seed provenance, units, and freshness.
+Prices()
+| where x_BillingProfileId =~ 'dto-retail-public-v1'
+| project MeterId=x_SkuMeterId, Offer=x_SkuOfferId, Price=ListUnitPrice,
+    Currency=PricingCurrency, Unit=x_PricingUnitDescription, BlockSize=x_PricingBlockSize,
+    Region=x_SkuRegion, EffectiveStart=x_EffectivePeriodStart, EffectiveEnd=x_EffectivePeriodEnd
+| take 201

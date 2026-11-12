@@ -1,0 +1,137 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sandbox context
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - src/design-time-optimizer/context/**
+      - src/scripts/Get-DesignTimeOptimizerContext.ps1
+      - src/scripts/Build-AgentPlugin.ps1
+      - src/templates/agent-plugin/**
+      - src/powershell/Tests/Unit/DesignTimeOptimizerContext.Tests.ps1
+      - src/powershell/Tests/Unit/HubsKqlOperators.Tests.ps1
+      - .github/workflows/sandbox-context.yml
+  pull_request:
+    branches: [dev]
+    paths:
+      - src/design-time-optimizer/context/**
+      - src/scripts/Get-DesignTimeOptimizerContext.ps1
+      - src/scripts/Build-AgentPlugin.ps1
+      - src/templates/agent-plugin/**
+      - src/powershell/Tests/Unit/DesignTimeOptimizerContext.Tests.ps1
+      - src/powershell/Tests/Unit/HubsKqlOperators.Tests.ps1
+      - .github/workflows/sandbox-context.yml
+  workflow_dispatch:
+    inputs:
+      seed_run_id:
+        description: Successful fork dev Sandbox seed data run with available artifacts and fresh prices
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-foundation
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.repository == 'bobjac/finops-toolkit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test context contracts, packaging, and KQL conventions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $configuration = New-PesterConfiguration
+          $configuration.Run.Path = @(
+            './src/powershell/Tests/Unit/DesignTimeOptimizerContext.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizer.Tests.ps1'
+            './src/powershell/Tests/Unit/HubsKqlOperators.Tests.ps1'
+            './src/powershell/Tests/Lint/KqlJoinKinds.Tests.ps1'
+          )
+          $configuration.Filter.FullName = @(
+            'Bounded design-time context*'
+            'Design-time optimizer experiment contract*'
+            'HubsKqlOperators*'
+            'KqlJoinKinds.Should not add bare joins*'
+          )
+          $configuration.Run.PassThru = $true
+          $configuration.Output.Verbosity = 'Detailed'
+          $result = Invoke-Pester -Configuration $configuration
+          if ($result.Result -ne 'Passed') { throw 'Context contract tests failed.' }
+          $issues = @(Invoke-ScriptAnalyzer -Path './src/scripts/Get-DesignTimeOptimizerContext.ps1' -Severity Warning,Error)
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Context script lint failed.' }
+
+  context:
+    needs: checks
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev'
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SEED_RUN: ${{ inputs.seed_run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify the current revision and actual sandbox approval
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --lifecycle --require-approval
+      - name: Verify and download the trusted seed artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SEED_RUN" =~ ^[0-9]+$ ]]
+          mkdir -p "$RUNNER_TEMP/context-evidence"
+          gh api "repos/bobjac/finops-toolkit/actions/runs/$SEED_RUN" > "$RUNNER_TEMP/context-evidence/seed-run.json"
+          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sandbox-seed.yml"' "$RUNNER_TEMP/context-evidence/seed-run.json"
+          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "sandbox-seed-$SEED_RUN" --dir "$RUNNER_TEMP/context-seed"
+          jq -e --arg run "$SEED_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/context-evidence/seed-run.json")" '.RunId == $run and .SourceRevision == $revision' "$RUNNER_TEMP/context-seed/seed-evidence-second/seed-report.json"
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Retrieve all four bounded tools without Azure mutations or model traffic
+        shell: pwsh
+        run: |
+          $scope = "/subscriptions/$env:AZURE_SUBSCRIPTION_ID/resourceGroups/ftk-dto-hack-s-ae46"
+          foreach ($tool in 'get_cost_summary', 'get_cost_by_resource', 'get_optimization_recommendations', 'get_current_pricing') {
+            $result = ./src/scripts/Get-DesignTimeOptimizerContext.ps1 `
+              -Tool $tool -SeedDirectory "$env:RUNNER_TEMP/context-seed" -Scope $scope -InformationAction Continue
+            $result | ConvertTo-Json -Depth 30 | Set-Content "$env:RUNNER_TEMP/context-evidence/$tool.json"
+          }
+          @(
+            '### Bounded FinOps context'
+            "All four read-only tools succeeded at revision $env:GITHUB_SHA."
+            "Seed run: $env:SEED_RUN"
+            'Historical June 2024 sample costs are not actual sandbox charges or measured savings.'
+            'No deployment, ingestion, recommendation generation, model traffic, or cleanup occurred.'
+          ) >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: sandbox-context-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/context-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7

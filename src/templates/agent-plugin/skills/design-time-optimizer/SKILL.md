@@ -18,7 +18,7 @@ The design-time optimizer tests whether a bounded code or infrastructure change 
 | --- | --- |
 | Create an experiment | Start from `references/sample-api-rightsize.experiment.json` and validate against `references/experiment.schema.json` |
 | Validate an experiment | Run `scripts/Test-DesignTimeOptimizerExperiment.ps1` |
-| Retrieve FinOps context | Load the `finops-toolkit` skill and use approved read-only queries |
+| Retrieve FinOps context | Load the `finops-toolkit` skill; for the hack sandbox, use the bounded context adapter below |
 | Propose a change | Select one material, measurable, reversible hypothesis |
 | Evaluate a result | Enforce all guardrails and required-price coverage |
 | Publish a recommendation | Report accept, reject, or repeat with evidence and cleanup status |
@@ -65,6 +65,20 @@ Every valid comparison needs:
 
 Historical billed cost can prioritize opportunities, but a short experiment normally estimates cost from measured consumption and applicable prices.
 
+## Bounded hack context
+
+For the hack sandbox, read `references/context/README.md` and run the packaged adapter:
+
+```powershell
+./skills/design-time-optimizer/scripts/Get-DesignTimeOptimizerContext.ps1 `
+    -Tool get_current_pricing -SeedDirectory <verified-seed-artifact-directory> `
+    -Scope <approved-resource-group-arm-id>
+```
+
+In the source repository, use `src/scripts/Get-DesignTimeOptimizerContext.ps1` and read `src/design-time-optimizer/context/README.md`. The four tools are `get_cost_summary`, `get_cost_by_resource`, `get_optimization_recommendations`, and `get_current_pricing`.
+
+Pass the user's explicit approved scope and verified seed artifact directory. Preserve the response's `source`, `scope`, `dataScope`, freshness, warnings, and evidence when explaining context. Historical June 2024 costs are sample context, not actual charges for the current application. Historical resource IDs are never deployment targets. Empty cached Advisor recommendations are explicit, not proof of optimization. Stop on provider failure or invalid/stale required pricing; do not fall back to fixtures, remembered rates, or unrestricted queries to bypass the boundary.
+
 ## Decision rules
 
 Recommend **accept** only when:
@@ -108,3 +122,5 @@ Recommend **repeat** when variance, sampling, stale data, missing telemetry, or 
 | `references/experiment.schema.json` | Version 1 JSON Schema |
 | `references/sample-api-rightsize.experiment.json` | Example experiment |
 | `scripts/Test-DesignTimeOptimizerExperiment.ps1` | Repository-native validator |
+| `scripts/Get-DesignTimeOptimizerContext.ps1` | Four bounded read-only hack context tools |
+| `references/context/` | Context contract, query templates, and operator instructions |

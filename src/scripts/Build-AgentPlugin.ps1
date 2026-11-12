@@ -77,6 +77,16 @@ if (Test-Path $optimizerSkill)
         (Join-Path $repoRoot 'src/scripts/Test-DesignTimeOptimizerExperiment.ps1') `
         -Destination $optimizerScripts `
         -Force
+
+    Copy-Item `
+        (Join-Path $repoRoot 'src/scripts/Get-DesignTimeOptimizerContext.ps1') `
+        -Destination $optimizerScripts `
+        -Force
+
+    Copy-Item `
+        (Join-Path $repoRoot 'src/design-time-optimizer/context') `
+        -Destination (Join-Path $optimizerReferences 'context') `
+        -Recurse -Force
 }
 
 Get-ChildItem $DestDir -Force -Recurse -Filter '.DS_Store' | Remove-Item -Force
