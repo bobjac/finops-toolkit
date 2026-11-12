@@ -16,7 +16,7 @@ param tags object
 var groupScope = resourceGroup().id
 
 module app 'modules/container-app.bicep' = {
-  name: appName
+  name: '${appName}-app'
   params: {
     name: appName
     location: 'eastus2'
