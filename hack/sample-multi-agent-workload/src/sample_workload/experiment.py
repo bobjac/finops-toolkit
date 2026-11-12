@@ -287,12 +287,16 @@ def analyze_run(
     request_by_session = {request.session_hash: request for request in run.requests}
     for span in run.telemetry:
         request = request_by_session.get(span.session_hash)
+        # Azure Monitor promotes session.id into SessionId and omits the custom-property copy.
         if (
             request is None
             or span.revision != run.revision
             or not run.start_utc <= span.timestamp <= run.end_utc
             or span.properties.get("experiment.id") != experiment_hash
-            or span.properties.get("session.id") != span.session_hash
+            or (
+                "session.id" in span.properties
+                and span.properties["session.id"] != span.session_hash
+            )
             or span.properties.get("optimization.variant") != run.variant
             or (request.trace_id and span.operation_id != request.trace_id)
         ):
@@ -508,7 +512,13 @@ def compare(
         "runs": results,
         "baselineCostSpreadPercent": str(spread) if spread is not None else None,
         "costChangePercent": str(change) if change is not None else None,
-        "problems": sorted(set(problems)),
+        "problems": sorted(
+            set(problems).union(
+                f"{result['variant']} pass {result['repetition']}: {problem}"
+                for result in results
+                for problem in result["problems"]
+            )
+        ),
         "failedGuardrails": sorted(set(failed_guardrails)),
         "limitations": [
             "Small sequential fixed-question PoC, not a statistically powered benchmark.",

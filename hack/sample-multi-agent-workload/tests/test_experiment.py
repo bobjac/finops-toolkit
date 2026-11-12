@@ -89,7 +89,6 @@ def measured(variant: str, repetition: int, tokens: int = 1000) -> RunMeasuremen
         trace = hashlib.md5(prefix.encode(), usedforsecurity=False).hexdigest()
         properties: dict[str, object] = {
             "experiment.id": experiment_hash,
-            "session.id": session_hash,
             "optimization.variant": variant,
         }
         common = {
@@ -202,6 +201,37 @@ def test_cached_tokens_and_nonanswers_are_priced_once() -> None:
     assert Decimal(str(result["costPerSuccessfulAnswerUsd"])) == Decimal("0.00330")
     assert Decimal(str(result["costPer1000SuccessfulAnswersUsd"])) == Decimal("3.30")
     assert result["priceCoveragePercent"] == 100
+
+
+@pytest.mark.parametrize(
+    "session_shape",
+    [
+        "promoted",
+        "matching-duplicate",
+        "conflicting-duplicate",
+        "null-duplicate",
+        "unknown-session",
+    ],
+)
+def test_exported_session_attribution_preserves_strict_correlation(session_shape: str) -> None:
+    runs = [measured("baseline", 1), measured("baseline", 2), measured("candidate", 1, 800)]
+    if session_shape == "matching-duplicate":
+        for run in runs:
+            for span in run.telemetry:
+                span.properties["session.id"] = span.session_hash
+    elif session_shape == "conflicting-duplicate":
+        runs[2].telemetry[0].properties["session.id"] = "0" * 64
+    elif session_shape == "null-duplicate":
+        runs[2].telemetry[0].properties["session.id"] = None
+    elif session_shape == "unknown-session":
+        runs[2].telemetry[0].session_hash = "0" * 64
+    result = decision(runs)
+    complete = session_shape in {"promoted", "matching-duplicate"}
+    assert result["evidenceComplete"] is complete
+    assert result["decision"] == ("accept" if complete else "repeat")
+    if not complete:
+        assert result["runs"][2]["estimatedModelCostUsd"] is None
+        assert any("candidate pass 1:" in problem for problem in result["problems"])
 
 
 def test_failed_consumption_remains_in_numerator_and_rejects() -> None:
