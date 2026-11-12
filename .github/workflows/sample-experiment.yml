@@ -1,0 +1,209 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sample experiment
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - hack/sample-multi-agent-workload/**
+      - src/design-time-optimizer/schemas/experiment.schema.json
+      - src/scripts/Test-DesignTimeOptimizerExperiment.ps1
+      - src/powershell/Tests/Unit/DesignTimeOptimizer.Tests.ps1
+      - .github/workflows/sample-experiment.yml
+  pull_request:
+    branches: [dev]
+    paths:
+      - hack/sample-multi-agent-workload/**
+      - src/design-time-optimizer/schemas/experiment.schema.json
+      - src/scripts/Test-DesignTimeOptimizerExperiment.ps1
+      - src/powershell/Tests/Unit/DesignTimeOptimizer.Tests.ps1
+      - .github/workflows/sample-experiment.yml
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run the bounded paid experiment, or retry exact run-owned app cleanup
+        type: choice
+        options: [run, cleanup]
+        default: run
+      baseline_revision:
+        description: Exact baseline commit SHA on fork dev history (run only)
+        type: string
+      candidate_revision:
+        description: Different exact candidate SHA on fork dev history (run only)
+        type: string
+      seed_run_id:
+        description: Successful fork dev Sandbox seed data run with fresh prices (run only)
+        type: string
+      sample_run_id:
+        description: Successful fork dev Sample workload CD run with live acceptance (run only)
+        type: string
+      cleanup_run_id:
+        description: Original completed Sample experiment run ID (cleanup only)
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-sample-deployment
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.repository == 'bobjac/finops-toolkit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Validate experiment arithmetic, attribution, and types
+        working-directory: hack/sample-multi-agent-workload
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install -e '.[dev]'
+          python -m ruff format --check .
+          python -m ruff check .
+          python -m mypy src tests
+          python -m pytest -q tests/test_experiment.py tests/test_experiment_load.py
+      - name: Test scope, schema, telemetry collection, and ownership-bound cleanup
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $paths = @(
+            './src/powershell/Tests/Unit/DesignTimeOptimizer.Tests.ps1'
+            './hack/sample-multi-agent-workload/tests/Experiment.Tests.ps1'
+          )
+          $result = Invoke-Pester -Path $paths -PassThru -Output Detailed
+          if ($result.Result -ne 'Passed') { throw 'Experiment contract/lifecycle tests failed.' }
+          $issues = @(Invoke-ScriptAnalyzer -Path './hack/sample-multi-agent-workload/eng' -Recurse -Severity Warning,Error)
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Experiment lifecycle lint failed.' }
+      - name: Compile the temporary-app-only deployment
+        run: az bicep build --file hack/sample-multi-agent-workload/infra/experiment.bicep --stdout > "$RUNNER_TEMP/experiment-template.json"
+
+  experiment:
+    needs: checks
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev'
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_REVISION: ${{ github.sha }}
+      BASELINE: ${{ inputs.baseline_revision }}
+      CANDIDATE: ${{ inputs.candidate_revision }}
+      SEED_RUN: ${{ inputs.seed_run_id }}
+      SAMPLE_RUN: ${{ inputs.sample_run_id }}
+      CLEANUP_RUN: ${{ inputs.cleanup_run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the current fork dev revision and actual sandbox approval
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --lifecycle --require-approval
+      - name: Resolve trusted source runs and retain their provenance
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/experiment-evidence"
+          if [[ "$OPERATION" == cleanup ]]; then
+            [[ "$CLEANUP_RUN" =~ ^[0-9]{1,12}$ ]]
+            gh api "repos/bobjac/finops-toolkit/actions/runs/$CLEANUP_RUN" > "$RUNNER_TEMP/experiment-evidence/original-run.json"
+            jq -e '.status == "completed" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sample-experiment.yml"' "$RUNNER_TEMP/experiment-evidence/original-run.json"
+            exit 0
+          fi
+          [[ "$OPERATION" == run && "$BASELINE" =~ ^[a-f0-9]{40}$ && "$CANDIDATE" =~ ^[a-f0-9]{40}$ && "$BASELINE" != "$CANDIDATE" ]]
+          [[ "$SEED_RUN" =~ ^[0-9]+$ && "$SAMPLE_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/bobjac/finops-toolkit/actions/runs/$SEED_RUN" > "$RUNNER_TEMP/experiment-evidence/seed-run.json"
+          gh api "repos/bobjac/finops-toolkit/actions/runs/$SAMPLE_RUN" > "$RUNNER_TEMP/experiment-evidence/sample-run.json"
+          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sandbox-seed.yml"' "$RUNNER_TEMP/experiment-evidence/seed-run.json"
+          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sample-workload-cd.yml"' "$RUNNER_TEMP/experiment-evidence/sample-run.json"
+          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "sandbox-seed-$SEED_RUN" --dir "$RUNNER_TEMP/experiment-seed"
+          attempt=$(jq -r .run_attempt "$RUNNER_TEMP/experiment-evidence/sample-run.json")
+          gh run download "$SAMPLE_RUN" --repo bobjac/finops-toolkit --name "sample-validation-$SAMPLE_RUN-$attempt" --dir "$RUNNER_TEMP/experiment-sample"
+          jq -e --arg run "$SEED_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/experiment-evidence/seed-run.json")" '.RunId == $run and .SourceRevision == $revision' "$RUNNER_TEMP/experiment-seed/seed-evidence-second/seed-report.json"
+          jq -e --arg run "$SAMPLE_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/experiment-evidence/sample-run.json")" '.runId == $run and .revision == $revision and .liveVerified == true and .status == "Completed"' "$RUNNER_TEMP/experiment-sample/deployment-validation.json"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: inputs.operation == 'run'
+        with:
+          python-version: '3.12'
+      - name: Install only the trusted current controller
+        if: inputs.operation == 'run'
+        working-directory: hack/sample-multi-agent-workload
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install --no-deps -e .
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        id: login
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build, deploy, load, collect, clean up, and compare
+        if: inputs.operation == 'run'
+        shell: pwsh
+        run: |
+          ./hack/sample-multi-agent-workload/eng/Invoke-Experiment.ps1 `
+            -BaselineRevision $env:BASELINE -CandidateRevision $env:CANDIDATE `
+            -SampleDirectory "$env:RUNNER_TEMP/experiment-sample" `
+            -SeedDirectory "$env:RUNNER_TEMP/experiment-seed" `
+            -OutputDirectory "$env:RUNNER_TEMP/experiment-evidence" -Confirm:$false
+      - name: Always verify cleanup of only the selected run-owned temporary apps
+        if: always() && steps.login.outcome == 'success'
+        shell: pwsh
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          $id = if ($env:OPERATION -ceq 'cleanup') { $env:CLEANUP_RUN } else { $env:GITHUB_RUN_ID }
+          ./hack/sample-multi-agent-workload/eng/Remove-Experiment.ps1 `
+            -RunId $id -OutputDirectory "$env:RUNNER_TEMP/experiment-evidence" -Confirm:$false
+      - name: Compare only after load, collection, and final cleanup verification succeed
+        if: success() && inputs.operation == 'run'
+        shell: pwsh
+        run: |
+          $directory = "$env:RUNNER_TEMP/experiment-evidence"
+          $hash = (Get-Content "$directory/conditions.sha256" -Raw).Trim()
+          python -m sample_workload.experiment `
+            --definition "$directory/definition.json" --runs "$directory/runs.json" `
+            --questions hack/sample-multi-agent-workload/tests/evaluation/questions.json `
+            --pricing "$directory/pricing.json" --conditions-hash $hash `
+            --cleanup "$directory/cleanup.json" --source-verification "$directory/source-verification.json" `
+            --output "$directory/decision.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Experiment evidence is incomplete; no acceptance or savings claim is valid.' }
+      - name: Publish the decision or explicit incomplete status
+        if: always()
+        shell: pwsh
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          $decision = "$env:RUNNER_TEMP/experiment-evidence/decision.md"
+          if (Test-Path -LiteralPath $decision) {
+            Get-Content $decision >> $env:GITHUB_STEP_SUMMARY
+          } elseif ($env:OPERATION -ceq 'cleanup') {
+            'Cleanup-only operation. Inspect cleanup.json and the cleanup step result; no experiment comparison was requested.' >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'No comparison decision exists. Inspect the failed step and cleanup receipt; do not claim savings or acceptance.' >> $env:GITHUB_STEP_SUMMARY
+          }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: sample-experiment-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/experiment-evidence/*.json
+            ${{ runner.temp }}/experiment-evidence/*.md
+            ${{ runner.temp }}/experiment-evidence/*.sha256
+          if-no-files-found: warn
+          retention-days: 7

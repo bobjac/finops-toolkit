@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "name": "sample-schema-context",
+  "adapter": "sample-multi-agent",
+  "description": "Evaluate one schema-context change using fixed golden questions and measured model usage.",
+  "workloadUnit": {
+    "name": "successful evaluated answers",
+    "quantity": 1000
+  },
+  "scope": {
+    "subscriptionId": "6e87e78d-fe02-4f01-bd7b-4f2157eabd5a",
+    "resourceGroupPrefix": "ftk-dto-hack-s-ae46",
+    "region": "eastus2"
+  },
+  "variants": {
+    "baseline": { "ref": "${BASELINE_REVISION}" },
+    "candidate": { "ref": "${CANDIDATE_REVISION}" }
+  },
+  "load": {
+    "testFile": "../tests/evaluation/questions.json",
+    "warmupMinutes": 1,
+    "durationMinutes": 10,
+    "virtualUsers": 1,
+    "baselineRepetitions": 2,
+    "requestIntervalSeconds": 60
+  },
+  "guardrails": {
+    "answerQualityPercent": { "minimum": 100 },
+    "errorRatePercent": { "maximum": 0 },
+    "p95LatencyRegressionPercent": { "maximum": 20 }
+  },
+  "cost": {
+    "currency": "USD",
+    "pricingSource": "finops-hub",
+    "requiredMeters": ["input", "cachedInput", "output"],
+    "minimumImprovementPercent": 5
+  },
+  "cleanup": {
+    "maximumLifetimeMinutes": 90
+  }
+}

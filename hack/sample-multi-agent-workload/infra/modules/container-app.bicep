@@ -11,6 +11,9 @@ param openAiEndpoint string
 param openAiDeployment string
 param appInsightsConnectionString string
 param tags object
+@minValue(0)
+@maxValue(1)
+param minReplicas int = 0
 
 var appEnv = isPlaceholder ? [
   {
@@ -133,7 +136,7 @@ resource app 'Microsoft.App/containerApps@2026-07-01' = {
         }
       ]
       scale: {
-        minReplicas: 0
+        minReplicas: minReplicas
         maxReplicas: 1
       }
     }

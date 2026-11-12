@@ -111,6 +111,31 @@ if ($experiment.cleanup.maximumLifetimeMinutes -le $loadMinutes)
     throw 'cleanup.maximumLifetimeMinutes must be greater than the combined warm-up and measured load duration.'
 }
 
+if ($experiment.adapter -eq 'sample-multi-agent')
+{
+    $required = @('input', 'cachedInput', 'output')
+    if ($experiment.load.virtualUsers -ne 1 -or $experiment.load.baselineRepetitions -ne 2 -or
+        $experiment.load.warmupMinutes -ne 1 -or $experiment.load.durationMinutes -ne 10 -or
+        $experiment.load.requestIntervalSeconds -ne 60 -or
+        $experiment.cleanup.maximumLifetimeMinutes -ne 90 -or
+        $experiment.guardrails.answerQualityPercent.minimum -ne 100 -or
+        $experiment.guardrails.errorRatePercent.maximum -ne 0 -or
+        $experiment.guardrails.p95LatencyRegressionPercent.maximum -ne 20 -or
+        $experiment.cost.minimumImprovementPercent -ne 5 -or
+        $experiment.workloadUnit.name -cne 'successful evaluated answers' -or
+        $experiment.workloadUnit.quantity -ne 1000 -or
+        $experiment.load.testFile -cne '../tests/evaluation/questions.json' -or
+        (@($experiment.guardrails.PSObject.Properties.Name | Sort-Object) -join ',') -cne
+            'answerQualityPercent,errorRatePercent,p95LatencyRegressionPercent' -or
+        $experiment.cost.currency -cne 'USD' -or $experiment.cost.pricingSource -cne 'finops-hub' -or
+        (@($experiment.cost.requiredMeters | Sort-Object) -join ',') -cne (($required | Sort-Object) -join ',') -or
+        $experiment.scope.subscriptionId -cne '6e87e78d-fe02-4f01-bd7b-4f2157eabd5a' -or
+        $experiment.scope.resourceGroupPrefix -cne 'ftk-dto-hack-s-ae46' -or $experiment.scope.region -cne 'eastus2')
+    {
+        throw 'The sample adapter must preserve the approved scope, load bounds, pricing basis, and guardrails.'
+    }
+}
+
 if ($CheckReferencedFiles)
 {
     $experimentDirectory = Split-Path -Parent $resolvedPath

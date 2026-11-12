@@ -208,6 +208,8 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 **Validation:** Test known calculations, failed requests, zero successful answers, mixed currencies, stale/missing prices, cached tokens, and duplicate attribution. Run repeated baselines to establish variance before interpreting candidate differences.
 
+**Approved PoC profile:** Use run-owned temporary Container Apps in the existing sandbox; do not update the retained demo app. Measure two baseline passes and one candidate pass against the same seven golden questions at concurrency one, with one warm-up request per pass and 60-second pacing. Bound the total to 24 requests and 96 model calls. Require 100% evaluated quality, zero HTTP errors, no more than 20% p95 regression, and cost improvement strictly above both 5% and observed baseline variation. The first live runner check may compare distinct revisions with unchanged agent logic, but cannot claim optimization savings. See the [experiment operator instructions](sample-multi-agent-workload/experiments/README.md). Live execution and exact temporary-app cleanup need separate approval; expiration enforcement remains H11.
+
 ### H10: Connect the optimizer agent to the experiment workflow
 
 **Scope:** Use existing optimizer agent/skill/command instructions to retrieve context, propose one bounded schema-context change, and request an approved experiment.

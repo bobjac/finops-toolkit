@@ -63,4 +63,25 @@ Describe 'Design-time optimizer experiment contract' {
 
         { & $script:Validator -Path $path -CheckReferencedFiles } | Should -Not -Throw
     }
+
+    It 'Accepts the bounded sample adapter and its actual golden questions' {
+        $path = Join-Path $script:RepoRoot 'hack/sample-multi-agent-workload/experiments/schema-context.experiment.json'
+        { & $script:Validator -Path $path -CheckReferencedFiles } | Should -Not -Throw
+    }
+
+    It 'Rejects weakened sample guardrails or unapproved load bounds' -ForEach @(
+        @{ Section = 'guardrails'; Name = 'answerQualityPercent'; Value = @{ minimum = 90 } }
+        @{ Section = 'guardrails'; Name = 'unimplementedGuard'; Value = @{ maximum = 0 } }
+        @{ Section = 'load'; Name = 'virtualUsers'; Value = 2 }
+        @{ Section = 'load'; Name = 'requestIntervalSeconds'; Value = 30 }
+        @{ Section = 'workloadUnit'; Name = 'quantity'; Value = 1 }
+        @{ Section = 'cleanup'; Name = 'maximumLifetimeMinutes'; Value = 120 }
+    ) {
+        $path = Join-Path $script:RepoRoot 'hack/sample-multi-agent-workload/experiments/schema-context.experiment.json'
+        $spec = Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+        $spec[$Section][$Name] = $Value
+        $temporary = Join-Path $TestDrive 'invalid-sample.json'
+        $spec | ConvertTo-Json -Depth 30 | Set-Content $temporary
+        { & $script:Validator -Path $temporary } | Should -Throw
+    }
 }

@@ -49,7 +49,7 @@ The API's `/health` checks process availability. `/ready` checks the local schem
 
 Golden expectations are checked-in values, not regenerated from the application. Evaluation compares statuses, answer text, columns, ordered rows, row counts, and agent calls, and exits nonzero on any mismatch. The tests also exercise unsafe SQL, provider failures at each agent, timeouts, incorrect results, and invented explanations. The root [sample CI workflow](../../.github/workflows/sample-workload-ci.yml) runs these checks and retains the offline evaluation report.
 
-H05 adds container packaging, managed-identity model access, OpenTelemetry export, and an independent deployment lifecycle. Load tests and optimization experiments remain later work. The broader roadmap below includes planned interfaces beyond H05.
+H05 adds container packaging, managed-identity model access, OpenTelemetry export, and an independent deployment lifecycle. H09 adds the bounded [experiment runner and cost evaluator](experiments/README.md). Live acceptance requires its own approved execution. The broader roadmap below includes planned interfaces beyond these PoC adapters.
 
 ## H05 live runtime and deployment
 
@@ -127,6 +127,7 @@ The sample must build, test, and deploy without a FinOps hub. A separately deplo
 
 - [Architecture](./architecture.md)
 - [Project plan](./project-plan.md)
+- [Controlled experiments and recovery](./experiments/README.md)
 
 ## Coding-agent startup instructions
 
