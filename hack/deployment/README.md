@@ -133,6 +133,7 @@ if ($issues.Count) { $issues; throw 'Orchestration lint failed.' }
 ```bash
 node --test hack/deployment/tests/predecessor.test.mjs \
   hack/sample-multi-agent-workload/tests/deployment.test.mjs
+git lfs pull --include="src/open-data/dataset-examples/EA-Cost-FOCUS_1.0.csv,src/open-data/dataset-examples/EA-Prices.csv" --exclude=""
 python3 -m unittest discover -s src/design-time-optimizer/seed -p 'test_*.py' -v
 actionlint .github/workflows/sandbox-deploy.yml \
   .github/workflows/sandbox-deploy-stages.yml .github/workflows/sandbox-context.yml \

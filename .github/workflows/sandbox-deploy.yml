@@ -62,6 +62,7 @@ jobs:
           python-version: '3.13'
       - name: Test seed preparation and retail price coverage
         run: |
+          git lfs pull --include="src/open-data/dataset-examples/EA-Cost-FOCUS_1.0.csv,src/open-data/dataset-examples/EA-Prices.csv" --exclude=""
           python3 -m pip install -r src/design-time-optimizer/seed/requirements.txt
           python3 -m unittest discover -s src/design-time-optimizer/seed -p 'test_*.py' -v
 
