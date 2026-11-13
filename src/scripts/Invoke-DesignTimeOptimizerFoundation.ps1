@@ -229,11 +229,15 @@ try
     }
     if ($Operation -eq 'Remove')
     {
+        if ($exists -isnot [bool]) { throw 'Foundation existence could not be verified.' }
         if ($exists)
         {
+            . (Join-Path $PSScriptRoot '../../hack/cleanup/Cleanup-Common.ps1')
+            $resources = @(Invoke-SampleAz @('resource', 'list', '--resource-group', $groupName, '--subscription', $subscription) -ExpectedType Array)
+            Assert-HackTeardownInventory -Group $group -Component Foundation -Resources $resources
             if (-not $PSCmdlet.ShouldProcess($groupId, 'Delete the owned foundation and all resources in this group')) { throw 'Removal was not approved.' }
             $null = Invoke-FoundationAzure -Arguments @('group', 'delete', '--name', $groupName, '--subscription', $subscription, '--yes')
-            if (Invoke-FoundationAzure -Arguments @('group', 'exists', '--name', $groupName, '--subscription', $subscription)) { throw 'Foundation deletion has not completed.' }
+            if (Invoke-SampleAz @('group', 'exists', '--name', $groupName, '--subscription', $subscription) -ExpectedType Boolean) { throw 'Foundation deletion has not completed.' }
         }
         $report.Status = if ($exists) { 'Removed' } else { 'AlreadyAbsent' }
     }

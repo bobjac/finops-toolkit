@@ -45,7 +45,7 @@ Describe 'Owned sandbox foundation lifecycle' {
         $tags['ftk-source'] = 'initial-revision'
         $script:State = @{
             Calls = [Collections.Generic.List[string]]::new()
-            Exists = $true; DeleteFails = $false; DeployFails = $false; MissingAdmin = $false
+            Exists = $true; DeleteFails = $false; DeployFails = $false; MissingAdmin = $false; ForeignResource = $false
             Group = @{ id = $script:Plan.ResourceGroupId; location = $script:Config.region; tags = $tags }
             Account = @{
                 id = $env:AZURE_SUBSCRIPTION_ID; tenantId = $env:AZURE_TENANT_ID; state = 'Enabled'
@@ -87,6 +87,7 @@ Describe 'Owned sandbox foundation lifecycle' {
             }
             elseif ($call -like 'resource list*') {
                 $response = @(@{ id = $state.Outputs.clusterId.value; type = 'Microsoft.Kusto/clusters'; name = 'testcluster'; tags = $state.Group.tags })
+                if ($state.ForeignResource) { $response[0].tags = @{ 'ftk-owner' = 'another/repository' } }
             }
             elseif ($call -match '/databases/(Hub|Ingestion)\?') { $response = @{ properties = @{ provisioningState = 'Succeeded' } } }
             elseif ($call -match '/databases/(Hub|Ingestion)/principalAssignments\?') {
@@ -151,6 +152,13 @@ Describe 'Owned sandbox foundation lifecycle' {
     It 'Records deletion failure rather than claiming successful cleanup' {
         $script:State.DeleteFails = $true
         { & $script:Lifecycle -Operation Remove -Path $script:ConfigPath -OutputDirectory $script:Output -ConfirmResourceGroup $script:Plan.ResourceGroup -Confirm:$false } | Should -Throw '*Deletion denied*'
+        (Get-Content (Join-Path $script:Output 'foundation.json') -Raw | ConvertFrom-Json).Status | Should -Be 'Failed'
+    }
+
+    It 'Preserves a tagged foundation group containing an unowned resource' {
+        $script:State.ForeignResource = $true
+        { & $script:Lifecycle -Operation Remove -Path $script:ConfigPath -OutputDirectory $script:Output -ConfirmResourceGroup $script:Plan.ResourceGroup -Confirm:$false } | Should -Throw '*unowned*'
+        @($script:State.Calls | Where-Object { $_ -like 'group delete*' }).Count | Should -Be 0
         (Get-Content (Join-Path $script:Output 'foundation.json') -Raw | ConvertFrom-Json).Status | Should -Be 'Failed'
     }
 

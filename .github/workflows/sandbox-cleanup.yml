@@ -1,0 +1,155 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Sandbox cleanup
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - hack/cleanup/**
+      - hack/sample-multi-agent-workload/eng/**
+      - src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1
+      - .github/workflows/sandbox-cleanup.yml
+  pull_request:
+    branches: [dev]
+    paths:
+      - hack/cleanup/**
+      - hack/sample-multi-agent-workload/eng/**
+      - src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1
+      - .github/workflows/sandbox-cleanup.yml
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Plan only, clean expired experiment apps, tear down one group, or validate isolated fixtures
+        type: choice
+        options: [Plan, Expired, Teardown, Validate]
+        default: Plan
+      component:
+        description: Expired only supports Experiments; Teardown requires one exact group
+        type: choice
+        options: [Experiments, Sample, Foundation, Validation]
+        default: Experiments
+      confirmation:
+        description: Exact group name for Teardown; validate-owned-cleanup-fixtures for Validate
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Hold both existing lifecycle locks so teardown cannot overlap either deployment.
+concurrency:
+  group: sandbox-foundation
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.repository == 'bobjac/finops-toolkit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test cleanup ownership, recovery, and existing lifecycle compatibility
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $paths = @(
+            './hack/cleanup/tests/Cleanup.Tests.ps1'
+            './hack/sample-multi-agent-workload/tests/Experiment.Tests.ps1'
+            './hack/sample-multi-agent-workload/tests/SampleDeployment.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizerFoundation.Tests.ps1'
+          )
+          $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed') { throw 'Cleanup lifecycle tests failed.' }
+          $issues = @(Get-ChildItem ./hack/cleanup -File -Filter *.ps1 |
+            ForEach-Object { Invoke-ScriptAnalyzer $_.FullName -Severity Warning,Error })
+          $issues += @(Invoke-ScriptAnalyzer ./hack/sample-multi-agent-workload/eng/Remove-Sample.ps1 -Severity Warning,Error)
+          $issues += @(Invoke-ScriptAnalyzer ./hack/sample-multi-agent-workload/eng/Sample-Common.ps1 -Severity Warning,Error)
+          $issues += @(Invoke-ScriptAnalyzer ./src/scripts/Invoke-DesignTimeOptimizerFoundation.ps1 -Severity Warning,Error)
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Cleanup lint failed.' }
+      - name: Test the existing fail-closed revision and approval checker
+        run: node --test hack/sample-multi-agent-workload/tests/deployment.test.mjs
+
+  cleanup:
+    needs: checks
+    if: >-
+      github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    environment: sandbox
+    concurrency:
+      group: sandbox-sample-deployment
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_REVISION: ${{ github.sha }}
+      CLEANUP_OPERATION: ${{ github.event_name == 'schedule' && 'Expired' || inputs.operation }}
+      CLEANUP_COMPONENT: ${{ github.event_name == 'schedule' && 'Experiments' || inputs.component }}
+      CLEANUP_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify the current dev revision and actual sandbox approval
+        run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --lifecycle --require-approval
+      - name: Validate exact operation confirmation before Azure login
+        shell: pwsh
+        run: |
+          if ($env:CLEANUP_OPERATION -eq 'Validate' -and $env:CLEANUP_CONFIRMATION -cne 'validate-owned-cleanup-fixtures') {
+            throw 'Fixture creation requires validate-owned-cleanup-fixtures confirmation.'
+          }
+          if ($env:CLEANUP_OPERATION -eq 'Teardown') {
+            . ./hack/cleanup/Cleanup-Common.ps1
+            if ($env:CLEANUP_COMPONENT -eq 'Experiments' -or
+                $env:CLEANUP_CONFIRMATION -cne (Get-HackCleanupGroup $env:CLEANUP_COMPONENT)) {
+              throw 'Teardown requires an exact allowlisted group confirmation.'
+            }
+          }
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Run only the approved bounded cleanup operation
+        shell: pwsh
+        run: |
+          if ($env:CLEANUP_OPERATION -eq 'Validate') {
+            ./hack/cleanup/Test-HackCleanupLive.ps1 -Confirmation $env:CLEANUP_CONFIRMATION `
+              -OutputDirectory "$env:RUNNER_TEMP/cleanup-evidence" -Confirm:$false
+          } else {
+            ./hack/cleanup/Invoke-HackCleanup.ps1 -Operation $env:CLEANUP_OPERATION `
+              -Component $env:CLEANUP_COMPONENT -Confirmation $env:CLEANUP_CONFIRMATION `
+              -OutputDirectory "$env:RUNNER_TEMP/cleanup-evidence" -Confirm:$false
+          }
+      - name: Publish cleanup status without converting failures into success
+        if: always()
+        shell: pwsh
+        run: |
+          $path = "$env:RUNNER_TEMP/cleanup-evidence"
+          if (Test-Path "$path/validation.json") {
+            $report = Get-Content "$path/validation.json" -Raw | ConvertFrom-Json
+            "Fixture validation verified: $($report.verified). Retained demo teardown was not tested." >> $env:GITHUB_STEP_SUMMARY
+          } elseif (Test-Path "$path/cleanup.md") {
+            Get-Content "$path/cleanup.md" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'No cleanup receipt exists. Cleanup is unverified; inspect the failed step and retry.' >> $env:GITHUB_STEP_SUMMARY
+          }
+          'Scheduled jobs still require sandbox approval; pending approval does not stop billable resources.' >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: sandbox-cleanup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cleanup-evidence/**/*.json
+          if-no-files-found: warn
+          retention-days: 30

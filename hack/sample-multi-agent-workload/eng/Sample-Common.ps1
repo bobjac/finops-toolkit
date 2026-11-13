@@ -4,12 +4,23 @@
 $ErrorActionPreference = 'Stop'
 
 function Invoke-SampleAz {
-    param([Parameter(Mandatory)][string[]]$Arguments)
+    param(
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [ValidateSet('Array', 'Boolean')][string]$ExpectedType
+    )
     $operation = ($Arguments | Select-Object -First 3) -join ' '
     Write-Information "Azure CLI started: $operation" -InformationAction Continue
     $result = & az @Arguments --only-show-errors --output json
     if ($LASTEXITCODE -ne 0) { throw "Azure CLI failed: $operation." }
     Write-Information "Azure CLI completed: $operation" -InformationAction Continue
+    if ($ExpectedType) {
+        $parsed = ($result -join "`n") | ConvertFrom-Json -NoEnumerate
+        if (($ExpectedType -eq 'Array' -and $parsed -isnot [array]) -or
+            ($ExpectedType -eq 'Boolean' -and $parsed -isnot [bool])) {
+            throw "Azure CLI returned an invalid $ExpectedType response: $operation."
+        }
+        return $parsed
+    }
     if ($result) { return (($result -join "`n") | ConvertFrom-Json) }
 }
 
