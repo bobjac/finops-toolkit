@@ -236,6 +236,8 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 **Scope:** Create the demonstration runbook, verify the complete scenario, and retain presentation fallback evidence.
 
+**Operator handoff:** Use the [recording runbook](./demo/README.md), `sample_workload.demo` preparation/playback entry points, and the explicit interactive-access checker. The original decision remains historical; stale prices, missing viewer access, or missing materials block recording readiness. Clean rebuild/retained teardown, timed video, and portal submission still require their own verified evidence and approval.
+
 **Acceptance:** Recreate the environment without undocumented setup beyond recorded identity prerequisites. Demonstrate baseline/candidate workbook results, a failed guardrail or missing-price case, and successful cleanup. Label snapshots or simulated fallback data explicitly.
 
 **Validation:** Run the full clean-environment rehearsal and record exact commands, workflow links, outcomes, and limitations. Confirm the application, workbook, agent tools, and evidence artifacts agree.

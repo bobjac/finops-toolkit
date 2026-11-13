@@ -17,6 +17,7 @@ Start with the [hack delivery plan](./project-plan.md). It defines the demonstra
 | [Design-time optimizer architecture](./specs/repositories/finops-toolkit-design-time-optimizer/architecture.md) | Standalone optimizer boundaries, contracts, and target implementation |
 | [Design-time optimizer reference plan](./specs/repositories/finops-toolkit-design-time-optimizer/project-plan.md) | Broader `DTO-*` backlog and post-hack hardening |
 | [Sample workload](./sample-multi-agent-workload/README.md) | Same-repository source and independent deployment boundary |
+| [Recording runbook](./demo/README.md) | Read-only preparation/playback, exact operator commands, narration, and final submission gates |
 | [Sample workload architecture](./sample-multi-agent-workload/architecture.md) | Independently deployable retail assistant, synthetic data, and telemetry |
 | [Sample workload reference plan](./sample-multi-agent-workload/project-plan.md) | Detailed `SMP-*` workload implementation backlog |
 | [Repository blueprint index](./specs/repositories/README.md) | Retained specification packages, including deferred work, and the sample directory |

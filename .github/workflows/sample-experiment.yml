@@ -70,7 +70,7 @@ jobs:
           python -m ruff format --check .
           python -m ruff check .
           python -m mypy src tests
-          python -m pytest -q tests/test_experiment.py tests/test_experiment_load.py
+          python -m pytest -q tests/test_experiment.py tests/test_experiment_load.py tests/test_demo.py
       - name: Test scope, schema, telemetry collection, and ownership-bound cleanup
         shell: pwsh
         run: |
@@ -79,6 +79,7 @@ jobs:
           $paths = @(
             './src/powershell/Tests/Unit/DesignTimeOptimizer.Tests.ps1'
             './hack/sample-multi-agent-workload/tests/Experiment.Tests.ps1'
+            './hack/sample-multi-agent-workload/tests/DemoAccess.Tests.ps1'
           )
           $result = Invoke-Pester -Path $paths -PassThru -Output Detailed
           if ($result.Result -ne 'Passed') { throw 'Experiment contract/lifecycle tests failed.' }
