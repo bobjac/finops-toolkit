@@ -153,7 +153,20 @@ class Coordinator:
                 raise ModelDependencyError("The model returned an unknown question pattern.")
             with safe_span(self.tracer, "schema-agent.run", attributes):
                 schema = await self.schema_agent.run(
-                    {"pattern": pattern, "schema": SCHEMA}, evidence, attributes
+                    {
+                        "pattern": pattern,
+                        "schema": ";".join(
+                            statement
+                            for statement in SCHEMA.split(";")
+                            if any(
+                                statement.lstrip().startswith(f"CREATE TABLE {table}(")
+                                for table in SCOPES[pattern]
+                            )
+                        )
+                        + ";",
+                    },
+                    evidence,
+                    attributes,
                 )
             if set(schema.tables) != set(SCOPES[pattern]):
                 raise ModelDependencyError("The model returned an unapproved schema scope.")
@@ -162,7 +175,15 @@ class Coordinator:
                     {
                         "pattern": pattern,
                         "tables": schema.tables,
-                        "schema": SCHEMA,
+                        "schema": ";".join(
+                            statement
+                            for statement in SCHEMA.split(";")
+                            if any(
+                                statement.lstrip().startswith(f"CREATE TABLE {table}(")
+                                for table in SCOPES[pattern]
+                            )
+                        )
+                        + ";",
                         "question": question.question,
                         "referenceDate": evidence.reference_date,
                     },

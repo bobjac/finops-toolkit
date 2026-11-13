@@ -20,6 +20,14 @@ Identify:
 
 If the experiment path is missing, search for `*.experiment.json`. If there is no specification or more than one plausible specification, ask the user to select or create one.
 
+For the fork's `sample-multi-agent` adapter, read the packaged
+`skills/design-time-optimizer/references/sample-optimization.md`, or
+`hack/sample-multi-agent-workload/experiments/optimizer.md` in a source
+checkout. That guide connects the four bounded context tools to the existing
+protected **Sample experiment** workflow. Keep its fixed policy and use
+proposal-only mode unless the user approves further work. Preserve the
+unchanged baseline SHA before edits and the exact published candidate SHA.
+
 ## 1. Validate the experiment
 
 Run:
@@ -79,7 +87,7 @@ Do not combine unrelated changes.
 
 If the user requested implementation and policy allows it:
 
-1. Create an isolated candidate branch.
+1. Follow repository Git policy and obtain approval; create a candidate branch only when allowed. The hack fork uses approved direct-`dev` publication.
 2. Make the bounded change.
 3. Add or update directly related tests.
 4. Run the repository's required validation.

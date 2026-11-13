@@ -477,6 +477,11 @@ def test_candidate_cannot_change_runtime_accounting_or_data() -> None:
     candidate = deepcopy(baseline)
     candidate["src/sample_workload/agents.py"] += b"\n# Documentation-only change.\n"
     assert validate_sources(baseline, candidate)["agentCodeChanged"] is False
+    # Keep an unoptimized prompt fixture even after the checkout contains the candidate.
+    baseline["src/sample_workload/agents.py"] = (
+        b'def prompt(pattern):\n    return {"schema": SCHEMA}\n'
+    )
+    candidate = deepcopy(baseline)
     expression = (
         b"';'.join(statement for statement in SCHEMA.split(';') "
         b"if any(statement.lstrip().startswith(f'CREATE TABLE {table}(') "

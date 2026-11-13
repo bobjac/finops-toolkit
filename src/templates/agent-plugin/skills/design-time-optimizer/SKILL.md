@@ -20,6 +20,7 @@ The design-time optimizer tests whether a bounded code or infrastructure change 
 | Validate an experiment | Run `scripts/Test-DesignTimeOptimizerExperiment.ps1` |
 | Retrieve FinOps context | Load the `finops-toolkit` skill; for the hack sandbox, use the bounded context adapter below |
 | Propose a change | Select one material, measurable, reversible hypothesis |
+| Optimize the hack sample | Read `references/sample-optimization.md`; use its existing context tools and protected experiment runner |
 | Evaluate a result | Enforce all guardrails and required-price coverage |
 | Publish a recommendation | Report accept, reject, or repeat with evidence and cleanup status |
 
@@ -81,6 +82,13 @@ Pass the user's explicit approved scope and verified seed artifact directory. Pr
 
 ## Decision rules
 
+For the fork's `sample-multi-agent` adapter, follow the sample guide and the
+repository's `hack/sample-multi-agent-workload/experiments/README.md`. Do not
+substitute this skill's generic example or decision rules for that adapter's
+fixed quality, error, latency, variation, and improvement requirements. In a
+source checkout, the guide is
+`hack/sample-multi-agent-workload/experiments/optimizer.md`.
+
 Recommend **accept** only when:
 
 - Functional and security tests pass.
@@ -124,3 +132,4 @@ Recommend **repeat** when variance, sampling, stale data, missing telemetry, or 
 | `scripts/Test-DesignTimeOptimizerExperiment.ps1` | Repository-native validator |
 | `scripts/Get-DesignTimeOptimizerContext.ps1` | Four bounded read-only hack context tools |
 | `references/context/` | Context contract, query templates, and operator instructions |
+| `references/sample-optimization.md` | Agent-led sample proposal, approved experiment request, and evidence handoff |

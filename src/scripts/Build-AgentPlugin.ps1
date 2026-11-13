@@ -69,6 +69,11 @@ if (Test-Path $optimizerSkill)
         -Destination (Join-Path $optimizerReferences 'sample-api-rightsize.experiment.json') `
         -Force
 
+    Copy-Item `
+        (Join-Path $repoRoot 'hack/sample-multi-agent-workload/experiments/optimizer.md') `
+        -Destination (Join-Path $optimizerReferences 'sample-optimization.md') `
+        -Force
+
     $optimizerScripts = Join-Path $optimizerSkill 'scripts'
     Remove-PluginBundle $optimizerScripts
     New-Item $optimizerScripts -ItemType Directory -Force | Out-Null

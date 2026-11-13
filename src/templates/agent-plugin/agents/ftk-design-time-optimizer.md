@@ -40,6 +40,16 @@ Before proposing a change:
 
 ## Optimization workflow
 
+For the fork's `sample-multi-agent` experiment, first read
+`skills/design-time-optimizer/references/sample-optimization.md`, or
+`hack/sample-multi-agent-workload/experiments/optimizer.md` in the source
+checkout. Use the existing four bounded context tools, propose only the
+approved schema-context selection change, and request the existing protected
+**Sample experiment** workflow. Preserve the baseline SHA before edits and
+the exact candidate SHA after approved publication. Do not create a branch or
+pull request when repository policy requires direct `dev` publication. Stop
+at a proposal unless implementation and each later paid operation are approved.
+
 ### 1. Validate the experiment
 
 - Locate the experiment JSON file.

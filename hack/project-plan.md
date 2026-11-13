@@ -24,7 +24,7 @@ The result is an evidence-supported accept, reject, or repeat decision. Savings 
 
 ## First optimization scenario
 
-Reduce unnecessary schema context sent to one specialist agent. Use the same model, retail data, question mix, and infrastructure for baseline and candidate. Change only the schema-context selection behavior.
+Reduce unnecessary schema context sent to the schema agent and SQL agent. The presenter approved applying the same bounded table-selection expression to both specialist prompts for H10 on November 12, 2026. Use the same model, retail data, question mix, and infrastructure for baseline and candidate. Change only the schema-context selection behavior.
 
 This moves AI token measurement earlier than the reference plan because the existing tokenomics workbook is central to the demonstration. Container Apps rightsizing is a second scenario, not a prerequisite for the first hack.
 

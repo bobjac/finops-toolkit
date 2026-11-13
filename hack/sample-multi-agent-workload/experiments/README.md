@@ -4,6 +4,10 @@ The **Sample experiment** workflow compares exact fork `dev` revisions without
 updating the retained demo app. It implements issue #11's experiment adapter,
 not issue #12's optimizer or issue #13's scheduled expiration backstop.
 
+For the agent-led proposal and bounded schema-context candidate, follow
+[Agent-led schema-context optimization](optimizer.md). It uses this same
+runner without changing measurement logic or guardrails.
+
 ## What runs
 
 The controller builds digest-pinned images from exact Git archives. It creates

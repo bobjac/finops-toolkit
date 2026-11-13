@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 from sample_workload.agents import Coordinator
 from sample_workload.api import create_app
 from sample_workload.contracts import Answer, QueryData, Question
-from sample_workload.database import Store, initialize
+from sample_workload.database import SCHEMA, Store, initialize
 from sample_workload.evaluation import GoldenCase, check, evaluate
-from sample_workload.model import DeterministicModel, ModelDependencyError
+from sample_workload.model import SCOPES, DeterministicModel, ModelDependencyError
 
 GOLDEN = Path(__file__).parent / "evaluation/questions.json"
 CASES = [GoldenCase.model_validate(value) for value in json.loads(GOLDEN.read_text())]
@@ -51,6 +51,52 @@ def test_golden_questions(client: TestClient, case: GoldenCase) -> None:
     assert check(case, result) == []
     assert result.evidence.model_mode == "deterministic"
     assert result.request_id.startswith("req-")
+
+
+@pytest.mark.parametrize(
+    "case", [case for case in CASES if case.expected_status == "answered"], ids=lambda case: case.id
+)
+def test_specialists_receive_only_complete_approved_table_definitions(
+    store: Store, case: GoldenCase
+) -> None:
+    class RecordingModel(DeterministicModel):
+        def __init__(self) -> None:
+            self.schemas: list[tuple[str, str]] = []
+
+        async def complete(self, role: str, context: dict[str, object]) -> str:
+            if role in {"schema-agent", "sql-agent"}:
+                schema = context["schema"]
+                assert isinstance(schema, str)
+                self.schemas.append((role, schema))
+            return await super().complete(role, context)
+
+    model = RecordingModel()
+    answer = asyncio.run(
+        Coordinator(store, model).answer(Question.model_validate(request(case.question)))
+    )
+    assert check(case, answer) == []
+    assert [role for role, _ in model.schemas] == ["schema-agent", "sql-agent"]
+    pattern = answer.evidence.question_pattern
+    assert isinstance(pattern, str)
+    expected_tables = set(SCOPES[pattern])
+    for _, schema in model.schemas:
+        assert len(schema) < len(SCHEMA)
+        with sqlite3.connect(":memory:") as selected, sqlite3.connect(store.path) as full:
+            selected.executescript(schema)
+            actual_tables = {
+                row[0]
+                for row in selected.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+            assert actual_tables == expected_tables
+            for table in expected_tables:
+                assert (
+                    selected.execute(f"PRAGMA table_info({table})").fetchall()
+                    == full.execute(f"PRAGMA table_info({table})").fetchall()
+                )
+                assert (
+                    selected.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+                    == full.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+                )
 
 
 def test_full_evaluation(store: Store) -> None:

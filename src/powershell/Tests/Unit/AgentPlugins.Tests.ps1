@@ -163,7 +163,7 @@ Describe 'Agent plugin components' {
     }
 
     It 'Bundles design-time optimizer contracts and validation' {
-        $bundle = Join-Path $TestDrive 'agent-plugin'
+        $bundle = Join-Path $TestDrive 'agent-plugin-optimizer'
         Copy-Item $script:Plugin -Destination $bundle -Recurse
 
         & (Join-Path $script:RepoRoot 'src/scripts/Build-AgentPlugin.ps1') -DestDir $bundle
@@ -171,6 +171,8 @@ Describe 'Agent plugin components' {
         $optimizerSkill = Join-Path $bundle 'skills/design-time-optimizer'
         Join-Path $optimizerSkill 'references/experiment.schema.json' | Should -Exist
         Join-Path $optimizerSkill 'references/sample-api-rightsize.experiment.json' | Should -Exist
+        (Get-FileHash (Join-Path $optimizerSkill 'references/sample-optimization.md')).Hash |
+            Should -Be (Get-FileHash (Join-Path $script:RepoRoot 'hack/sample-multi-agent-workload/experiments/optimizer.md')).Hash
         Join-Path $optimizerSkill 'scripts/Test-DesignTimeOptimizerExperiment.ps1' | Should -Exist
 
         $result = & (Join-Path $optimizerSkill 'scripts/Test-DesignTimeOptimizerExperiment.ps1') `
