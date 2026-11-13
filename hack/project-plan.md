@@ -224,6 +224,8 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 **Approved PoC boundaries (November 12, 2026):** The presenter selected the existing `sandbox` approval for every scheduled cleanup, not a new unattended identity or weakened environment protection. Scheduled cleanup targets only expired, exactly owned experiment apps; queued approvals are not an automatic shutdown guarantee. Retained group teardown requires separate exact confirmation. Validate first using isolated cleanup fixtures and preserve the retained demo; do not claim its full teardown was exercised.
 
+**Accepted PoC validation:** The presenter accepted offline fault injection for deployment, load, cancellation-orphan, and deletion failures, plus protected live fixture expiration, fresh-app preservation, simulated orphan recovery, and full isolated group teardown. Run `43363642622`, attempt 2, verified fixture removal and unchanged retained resources. No actual scheduled event or cancellation with live orphan resources was exercised; retained sample/foundation teardown remains untested.
+
 **Acceptance:** Cleanup only targets identified hack-owned resources. Shared model endpoints are excluded. Failure is visible and retryable. Tags and budgets are not treated as automatic shutdown mechanisms.
 
 **Validation:** Exercise success, failed deployment, failed load, cancellation recovery, and expiration paths. Verify evidence survives and full teardown removes every owned resource. Begin basic teardown alongside H02/H05; do not wait for this issue to close before adding failure cleanup.
