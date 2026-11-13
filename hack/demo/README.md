@@ -5,6 +5,10 @@ Prepare off camera, then record a **3-5 minute** walkthrough. Target **4 minutes
 claim. Keep [issue #14](https://github.com/bobjac/finops-toolkit/issues/14) open
 until the clean rehearsal, video, and portal submission are verified.
 
+**Recording on a Mac?** Follow the [click-by-click Mac recording guide](record-on-mac.md)
+for browser setup, microphone selection, recording, narration, editing, and submission.
+This page remains the technical preparation runbook.
+
 ## Safety and readiness
 
 | Entry point | Effects |
