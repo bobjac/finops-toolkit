@@ -104,8 +104,8 @@ jobs:
           [[ "$SEED_RUN" =~ ^[0-9]+$ ]]
           mkdir -p "$RUNNER_TEMP/context-evidence"
           gh api "repos/bobjac/finops-toolkit/actions/runs/$SEED_RUN" > "$RUNNER_TEMP/context-evidence/seed-run.json"
-          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sandbox-seed.yml"' "$RUNNER_TEMP/context-evidence/seed-run.json"
-          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "sandbox-seed-$SEED_RUN" --dir "$RUNNER_TEMP/context-seed"
+          artifact=$(node hack/deployment/check-predecessor.mjs seed "$RUNNER_TEMP/context-evidence/seed-run.json")
+          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "$artifact" --dir "$RUNNER_TEMP/context-seed"
           jq -e --arg run "$SEED_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/context-evidence/seed-run.json")" '.RunId == $run and .SourceRevision == $revision' "$RUNNER_TEMP/context-seed/seed-evidence-second/seed-report.json"
       - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:

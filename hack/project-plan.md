@@ -186,9 +186,11 @@ Use the tracking issue's checklist and native sub-issue progress to show deliver
 
 **Scope:** Compose building, deploying, seeding, generating demonstration traffic, and readiness verification into one manual workflow.
 
+**Approved validation boundary:** Preserve the retained demo and its telemetry. Validate H07 through a retained-scope deployment and safe rerun; defer the clean-scope rebuild rehearsal to H12 (#14), with separate approval for any teardown. No Azure mutations are authorized merely by this implementation decision.
+
 **Acceptance:** A workflow from the fork's `dev` creates the complete retained demo environment. It publishes application/workbook links, resolved source revisions, seed metadata, ownership, and verification results. No undocumented endpoint-copying steps remain.
 
-**Validation:** Run from a clean hack-owned scope, then rerun safely. Test partial deployment and ingestion failures. Failed stages cannot publish a successful readiness summary.
+**Validation:** Deploy to the existing owned scope, then rerun safely without deleting retained groups. Test partial deployment and ingestion failures. Failed stages cannot publish a successful readiness summary. The clean-scope rebuild rehearsal remains required in H12.
 
 ### H08: Add bounded FinOps context and pricing tools
 

@@ -1,0 +1,81 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Deploy hack sandbox
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - hack/deployment/**
+      - .github/actions/hack-deployment-stage/**
+      - .github/workflows/sandbox-deploy*.yml
+  pull_request:
+    branches: [dev]
+    paths:
+      - hack/deployment/**
+      - .github/actions/hack-deployment-stage/**
+      - .github/workflows/sandbox-deploy*.yml
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Enter deploy-retained-hack-sandbox to deploy both owned groups, replace seed partitions, and run seven live questions
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-foundation
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.repository == 'bobjac/finops-toolkit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test readiness, orchestration, and existing lifecycle contracts
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 6.0.0 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $paths = @(
+            './hack/deployment/tests/Deployment.Tests.ps1'
+            './hack/sample-multi-agent-workload/tests/SampleDeployment.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizerFoundation.Tests.ps1'
+            './src/powershell/Tests/Unit/DesignTimeOptimizerSeed.Tests.ps1'
+          )
+          $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed') { throw 'Sandbox orchestration tests failed.' }
+          $issues = @(Get-ChildItem ./hack/deployment -File -Filter *.ps1 |
+            ForEach-Object { Invoke-ScriptAnalyzer $_.FullName -Severity Warning,Error })
+          if ($issues.Count) { $issues | Format-Table -AutoSize; throw 'Orchestration lint failed.' }
+      - name: Test trusted source artifacts and the existing approval checker
+        run: node --test hack/deployment/tests/predecessor.test.mjs hack/sample-multi-agent-workload/tests/deployment.test.mjs
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Test seed preparation and retail price coverage
+        run: |
+          python3 -m pip install -r src/design-time-optimizer/seed/requirements.txt
+          python3 -m unittest discover -s src/design-time-optimizer/seed -p 'test_*.py' -v
+
+  deployment:
+    needs: checks
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev'
+    concurrency:
+      group: sandbox-sample-deployment
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/sandbox-deploy-stages.yml
+    with:
+      confirmation: ${{ inputs.confirmation }}
+    secrets: inherit

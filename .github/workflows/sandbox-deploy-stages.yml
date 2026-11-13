@@ -1,0 +1,317 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Hack sandbox deployment stages
+
+on:
+  workflow_call:
+    inputs:
+      confirmation:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  SOURCE_REVISION: ${{ github.sha }}
+
+jobs:
+  foundation:
+    if: github.repository == 'bobjac/finops-toolkit' && github.ref == 'refs/heads/dev' && github.event_name == 'workflow_dispatch'
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Foundation
+          confirmation: ${{ inputs.confirmation }}
+
+  verify:
+    needs: foundation
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.foundation.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Verify
+          confirmation: ${{ inputs.confirmation }}
+
+  seed_first:
+    needs: verify
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.verify.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: SeedFirst
+          confirmation: ${{ inputs.confirmation }}
+
+  seed_second:
+    needs: seed_first
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.seed_first.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: SeedSecond
+          confirmation: ${{ inputs.confirmation }}
+
+  infrastructure:
+    needs: seed_second
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.seed_second.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Infrastructure
+          confirmation: ${{ inputs.confirmation }}
+
+  image:
+    needs: infrastructure
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.infrastructure.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Image
+          confirmation: ${{ inputs.confirmation }}
+
+  application:
+    needs: image
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.image.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Application
+          confirmation: ${{ inputs.confirmation }}
+
+  validation:
+    needs: application
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.application.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Validation
+          confirmation: ${{ inputs.confirmation }}
+
+  workbook:
+    needs: validation
+    environment: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      SAMPLE_DEPLOYER_OBJECT_ID: ${{ vars.SAMPLE_DEPLOYER_OBJECT_ID }}
+      SAMPLE_PRICE_EVIDENCE: ${{ vars.SAMPLE_PRICE_EVIDENCE }}
+    outputs:
+      artifact: ${{ steps.stage.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ needs.validation.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - id: stage
+        uses: ./.github/actions/hack-deployment-stage
+        with:
+          stage: Workbook
+          confirmation: ${{ inputs.confirmation }}
+
+  readiness:
+    needs: [foundation, verify, seed_first, seed_second, infrastructure, image, application, validation, workbook]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.workbook.result == 'success'
+        with:
+          name: ${{ needs.workbook.outputs.artifact }}
+          path: ${{ runner.temp }}/hack-evidence
+      - name: Publish only verified end-to-end readiness
+        shell: pwsh
+        env:
+          HACK_STAGE_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          ./hack/deployment/Complete-HackDeployment.ps1 -EvidenceDirectory "$env:RUNNER_TEMP/hack-evidence" `
+            -StageResultsJson $env:HACK_STAGE_RESULTS
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: hack-readiness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/hack-evidence/readiness.json
+            ${{ runner.temp }}/hack-evidence/readiness.md
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish compatible seed evidence for bounded context and experiments
+        if: success()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sandbox-seed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/hack-evidence/seed/seed-first/seed.json
+            ${{ runner.temp }}/hack-evidence/seed/seed-first/retail-source.json
+            ${{ runner.temp }}/hack-evidence/seed/seed-second/seed.json
+            ${{ runner.temp }}/hack-evidence/seed/seed-evidence-first/*.json
+            ${{ runner.temp }}/hack-evidence/seed/seed-evidence-first/foundation/*.json
+            ${{ runner.temp }}/hack-evidence/seed/seed-evidence-second/*.json
+            ${{ runner.temp }}/hack-evidence/seed/seed-evidence-second/foundation/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish original sample validation evidence without rewriting provenance
+        if: success()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sample-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hack-evidence/sample/*.json
+          if-no-files-found: error
+          retention-days: 30

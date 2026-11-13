@@ -129,13 +129,12 @@ jobs:
           [[ "$SEED_RUN" =~ ^[0-9]+$ && "$SAMPLE_RUN" =~ ^[0-9]+$ ]]
           gh api "repos/bobjac/finops-toolkit/actions/runs/$SEED_RUN" > "$RUNNER_TEMP/experiment-evidence/seed-run.json"
           gh api "repos/bobjac/finops-toolkit/actions/runs/$SAMPLE_RUN" > "$RUNNER_TEMP/experiment-evidence/sample-run.json"
-          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sandbox-seed.yml"' "$RUNNER_TEMP/experiment-evidence/seed-run.json"
-          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sample-workload-cd.yml"' "$RUNNER_TEMP/experiment-evidence/sample-run.json"
-          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "sandbox-seed-$SEED_RUN" --dir "$RUNNER_TEMP/experiment-seed"
-          attempt=$(jq -r .run_attempt "$RUNNER_TEMP/experiment-evidence/sample-run.json")
-          gh run download "$SAMPLE_RUN" --repo bobjac/finops-toolkit --name "sample-validation-$SAMPLE_RUN-$attempt" --dir "$RUNNER_TEMP/experiment-sample"
-          jq -e --arg run "$SEED_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/experiment-evidence/seed-run.json")" '.RunId == $run and .SourceRevision == $revision' "$RUNNER_TEMP/experiment-seed/seed-evidence-second/seed-report.json"
-          jq -e --arg run "$SAMPLE_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/experiment-evidence/sample-run.json")" '.runId == $run and .revision == $revision and .liveVerified == true and .status == "Completed"' "$RUNNER_TEMP/experiment-sample/deployment-validation.json"
+          seed_artifact=$(node hack/deployment/check-predecessor.mjs seed "$RUNNER_TEMP/experiment-evidence/seed-run.json")
+          sample_artifact=$(node hack/deployment/check-predecessor.mjs sample "$RUNNER_TEMP/experiment-evidence/sample-run.json")
+          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "$seed_artifact" --dir "$RUNNER_TEMP/experiment-seed"
+          gh run download "$SAMPLE_RUN" --repo bobjac/finops-toolkit --name "$sample_artifact" --dir "$RUNNER_TEMP/experiment-sample"
+          node hack/deployment/check-predecessor.mjs seed "$RUNNER_TEMP/experiment-evidence/seed-run.json" "$RUNNER_TEMP/experiment-seed/seed-evidence-second/seed-report.json"
+          node hack/deployment/check-predecessor.mjs sample "$RUNNER_TEMP/experiment-evidence/sample-run.json" "$RUNNER_TEMP/experiment-sample/deployment-validation.json"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         if: inputs.operation == 'run'
         with:

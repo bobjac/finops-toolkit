@@ -1,0 +1,72 @@
+name: Run a protected hack deployment stage
+description: Recheck approval, sign in on a fresh runner, and retain only nonsecret checkpoints
+inputs:
+  stage:
+    description: One bounded deployment stage
+    required: true
+  confirmation:
+    description: Exact retained sandbox deployment confirmation
+    required: true
+outputs:
+  artifact:
+    description: Exact cumulative checkpoint, including the attempt that produced it
+    value: hack-stage-${{ inputs.stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+runs:
+  using: composite
+  steps:
+    - name: Verify the current revision and actual sandbox approval
+      shell: bash
+      run: node hack/sample-multi-agent-workload/eng/check-deployment.mjs --lifecycle --require-approval
+    - name: Check confirmation, expiry, identity, and prices before Azure login
+      shell: pwsh
+      env:
+        HACK_CONFIRMATION: ${{ inputs.confirmation }}
+      run: |
+        . ./hack/deployment/Deployment-Common.ps1
+        Assert-HackDeploymentInput $env:HACK_CONFIRMATION
+    - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+      with:
+        client-id: ${{ env.AZURE_CLIENT_ID }}
+        tenant-id: ${{ env.AZURE_TENANT_ID }}
+        subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+    - name: Install foundation and ingestion prerequisites
+      if: contains(fromJSON('["Foundation","Verify","SeedFirst","SeedSecond"]'), inputs.stage)
+      shell: bash
+      run: |
+        set -euo pipefail
+        az extension add --name quota --only-show-errors
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      if: inputs.stage == 'Foundation'
+      with:
+        python-version: '3.13'
+    - name: Prepare build tools and public seed inputs
+      if: inputs.stage == 'Foundation'
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m pip install -r src/design-time-optimizer/seed/requirements.txt
+        git lfs pull --include="src/open-data/dataset-examples/EA-Cost-FOCUS_1.0.csv,src/open-data/dataset-examples/EA-Prices.csv" --exclude=""
+        az bicep install
+        echo "$HOME/.azure/bin" >> "$GITHUB_PATH"
+    - name: Install workbook query support
+      if: inputs.stage == 'Workbook'
+      shell: bash
+      run: az extension add --name application-insights --only-show-errors
+    - name: Run the existing scoped entry point
+      shell: pwsh
+      env:
+        HACK_STAGE: ${{ inputs.stage }}
+        HACK_CONFIRMATION: ${{ inputs.confirmation }}
+      run: |
+        ./hack/deployment/Invoke-HackDeploymentStage.ps1 -Stage $env:HACK_STAGE `
+          -Confirmation $env:HACK_CONFIRMATION -EvidenceDirectory "$env:RUNNER_TEMP/hack-evidence"
+    - name: Retain immutable nonsecret checkpoints, including failures
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      with:
+        name: hack-stage-${{ inputs.stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |
+          ${{ runner.temp }}/hack-evidence/**/*.json
+          ${{ runner.temp }}/hack-evidence/**/*.parquet
+        if-no-files-found: warn
+        retention-days: 30

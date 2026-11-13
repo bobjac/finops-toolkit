@@ -154,13 +154,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/workbook-evidence"
           gh api "repos/bobjac/finops-toolkit/actions/runs/$SEED_RUN" > "$RUNNER_TEMP/workbook-evidence/seed-run.json"
           gh api "repos/bobjac/finops-toolkit/actions/runs/$SAMPLE_RUN" > "$RUNNER_TEMP/workbook-evidence/sample-run.json"
-          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sandbox-seed.yml"' "$RUNNER_TEMP/workbook-evidence/seed-run.json"
-          jq -e '.conclusion == "success" and .head_branch == "dev" and .head_repository.full_name == "bobjac/finops-toolkit" and .path == ".github/workflows/sample-workload-cd.yml"' "$RUNNER_TEMP/workbook-evidence/sample-run.json"
-          attempt=$(jq -r '.run_attempt' "$RUNNER_TEMP/workbook-evidence/sample-run.json")
-          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "sandbox-seed-$SEED_RUN" --dir "$RUNNER_TEMP/workbook-seed"
-          gh run download "$SAMPLE_RUN" --repo bobjac/finops-toolkit --name "sample-validation-$SAMPLE_RUN-$attempt" --dir "$RUNNER_TEMP/workbook-sample"
-          jq -e --arg run "$SEED_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/workbook-evidence/seed-run.json")" '.RunId == $run and .SourceRevision == $revision' "$RUNNER_TEMP/workbook-seed/seed-evidence-second/seed-report.json"
-          jq -e --arg run "$SAMPLE_RUN" --arg revision "$(jq -r .head_sha "$RUNNER_TEMP/workbook-evidence/sample-run.json")" --arg attempt "$attempt" '.runId == $run and .revision == $revision and .runAttempt == $attempt' "$RUNNER_TEMP/workbook-sample/deployment-validation.json"
+          seed_artifact=$(node hack/deployment/check-predecessor.mjs seed "$RUNNER_TEMP/workbook-evidence/seed-run.json")
+          sample_artifact=$(node hack/deployment/check-predecessor.mjs sample "$RUNNER_TEMP/workbook-evidence/sample-run.json")
+          gh run download "$SEED_RUN" --repo bobjac/finops-toolkit --name "$seed_artifact" --dir "$RUNNER_TEMP/workbook-seed"
+          gh run download "$SAMPLE_RUN" --repo bobjac/finops-toolkit --name "$sample_artifact" --dir "$RUNNER_TEMP/workbook-sample"
+          node hack/deployment/check-predecessor.mjs seed "$RUNNER_TEMP/workbook-evidence/seed-run.json" "$RUNNER_TEMP/workbook-seed/seed-evidence-second/seed-report.json"
+          node hack/deployment/check-predecessor.mjs sample "$RUNNER_TEMP/workbook-evidence/sample-run.json" "$RUNNER_TEMP/workbook-sample/deployment-validation.json"
       - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
