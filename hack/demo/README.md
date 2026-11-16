@@ -6,8 +6,34 @@ claim. Keep [issue #14](https://github.com/bobjac/finops-toolkit/issues/14) open
 until the clean rehearsal, video, and portal submission are verified.
 
 **Recording on a Mac?** Follow the [click-by-click Mac recording guide](record-on-mac.md)
-for browser setup, microphone selection, recording, narration, editing, and submission.
-This page remains the technical preparation runbook.
+to record the already completed experiment without running commands yourself.
+The assistant prepares and verifies the archived six-scene presentation.
+This page remains the technical preparation runbook for operators.
+
+## Archived walkthrough
+
+An archived walkthrough does **not** require another experiment or Azure rebuild.
+An operator can prepare it from the original downloaded evidence, entirely locally:
+
+```bash
+hack/sample-multi-agent-workload/.venv/bin/python -m sample_workload.demo archive --input ORIGINALS_DIRECTORY --output NEW_PRESENTATION_DIRECTORY
+hack/sample-multi-agent-workload/.venv/bin/python -m sample_workload.demo verify --directory NEW_PRESENTATION_DIRECTORY
+```
+
+The export reproduces the original decision with the original evaluator, golden
+questions, and pricing dates, verifies the recorded proposal/context, and builds
+six linked HTML scenes plus `narration.html`. Open `index.html` to present it.
+It doesn't query Azure, send a model request, or claim a live workbook.
+Missing original answer text is labeled, never reconstructed.
+
+`archiveReady: true` means the archived presentation was exported, **not** that
+the fresh-live recording gates or issue #14 are complete. `ready` remains false,
+so `show` and the fresh-live path cannot silently treat an archive as live-ready.
+Don't modify the manifest or original dates. Prices can be stale now only
+because the archive explicitly describes their original measurement-time use.
+
+The following sections cover the separate fresh technical rehearsal. They are
+not prerequisites for recording the archived walkthrough.
 
 ## Safety and readiness
 

@@ -11,6 +11,7 @@ import re
 import webbrowser
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -292,11 +293,16 @@ def inspect_evidence(root: Path, questions: Path, now: datetime) -> dict[str, An
 
 
 def inspect_materials(
-    root: Path, evidence: dict[str, Any], questions: Path, now: datetime
+    root: Path,
+    evidence: dict[str, Any],
+    questions: Path,
+    now: datetime,
+    *,
+    archived: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     problems = []
     materials: dict[str, Any] = {}
-    for name in ("viewer", "retention", "opening", "proposal"):
+    for name in ("proposal",) if archived else ("viewer", "retention", "opening", "proposal"):
         path = root / f"{name}.json"
         if not path.is_file():
             problems.append(f"Missing {name}.json; follow the off-camera command sheet.")
@@ -444,19 +450,23 @@ def inspect_materials(
                 "context": contexts,
                 "sourceSha256": digest(path),
             }
-    for name in SHOTS:
+    for name in () if archived else SHOTS:
         path = root / "screenshots" / name
         if not path.is_file():
             problems.append(f"Missing reviewed screenshot: {name}.")
     return materials, problems
 
 
-def prepare(root: Path, output: Path, questions: Path, *, now: datetime) -> dict[str, Any]:
+def require_new_output(root: Path, output: Path) -> None:
     require(not output.exists(), "Use a new evidence directory; never overwrite a prior package.")
     require(
         not output.resolve().is_relative_to(root.resolve()),
         "Keep the presentation package separate from the private original evidence directory.",
     )
+
+
+def prepare(root: Path, output: Path, questions: Path, *, now: datetime) -> dict[str, Any]:
+    require_new_output(root, output)
     evidence = inspect_evidence(root, questions, now)
     materials, problems = inspect_materials(root, evidence, questions, now)
     problems.extend(evidence["currentPriceProblems"])
@@ -551,6 +561,11 @@ def prepare(root: Path, output: Path, questions: Path, *, now: datetime) -> dict
     for name, url in evidence["links"].items():
         page += f'<a href="{html.escape(url, quote=True)}">{html.escape(name)}</a>'
     (output / "index.html").write_text(page + "\n", encoding="utf-8")
+    seal_package(root, output)
+    return report
+
+
+def seal_package(root: Path, output: Path) -> None:
     write(
         output / "manifest.json",
         {
@@ -591,6 +606,288 @@ def prepare(root: Path, output: Path, questions: Path, *, now: datetime) -> dict
             ),
         },
     )
+
+
+def archive_table(headers: tuple[str, ...], rows: list[list[object]]) -> str:
+    return (
+        "<table><thead><tr>"
+        + "".join(f"<th>{html.escape(value)}</th>" for value in headers)
+        + "</tr></thead><tbody>"
+        + "".join(
+            "<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in row) + "</tr>"
+            for row in rows
+        )
+        + "</tbody></table>"
+    )
+
+
+def prepare_archive(root: Path, output: Path, questions: Path, *, now: datetime) -> dict[str, Any]:
+    """Reproduce a historical result, without asserting current Azure readiness."""
+    require_new_output(root, output)
+    evidence = inspect_evidence(root, questions, now)
+    materials, problems = inspect_materials(root, evidence, questions, now, archived=True)
+    require(not problems, "The original recorded proposal and context are required for an archive.")
+    comparison = evidence["comparison"]
+    runs = comparison["runs"]
+    baseline = sum(Decimal(run["costPer1000SuccessfulAnswersUsd"]) for run in runs[:2]) / 2
+    candidate = Decimal(runs[2]["costPer1000SuccessfulAnswersUsd"])
+    decision = comparison["decision"].upper()
+    result = f"Original decision: {decision}"
+    change = comparison["costChangePercent"]
+    if decision == "ACCEPT" and change is not None:
+        result += f" | {-Decimal(change):.2f}% lower estimated model-only unit cost"
+    case = next(
+        GoldenCase.model_validate(value)
+        for value in read(questions)
+        if value["id"] == "inventory-below-reorder"
+    )
+    measurements = [
+        RunMeasurement.model_validate(value) for value in read(root / "experiment/runs.json")
+    ]
+    inventory = next(
+        request
+        for run in measurements
+        if run.variant == "candidate"
+        for request in run.requests
+        if request.case_id == case.id
+    )
+    request_summary = {
+        "label": "Retained evaluation metadata, not reconstructed answer text",
+        "question": case.question,
+        "answerStatus": inventory.answer_status,
+        "httpStatus": inventory.http_status,
+        "evaluationPassed": not inventory.failures,
+        "agentCalls": inventory.agent_calls,
+        "modelCalls": len(inventory.model_usage),
+    }
+    proposal = materials["proposal"]
+    freshness = evidence["pricing"]["freshness"]
+    cost_table = archive_table(
+        ("Pass", "USD / 1,000 answers", "Quality", "HTTP errors", "Prices", "p95 ms"),
+        [
+            [
+                f"{run['variant']} {run['repetition']}",
+                f"{Decimal(run['costPer1000SuccessfulAnswersUsd']):.4f}",
+                f"{run['qualityPercent']:g}%",
+                f"{run['errorRatePercent']:g}%",
+                f"{run['priceCoveragePercent']:g}%",
+                f"{run['p95LatencyMs']:.1f}",
+            ]
+            for run in runs
+        ],
+    )
+    usage_table = archive_table(
+        ("Pass", "Input tokens", "Cached input", "Output tokens", "Model calls"),
+        [
+            [
+                f"{run['variant']} {run['repetition']}",
+                run["tokens"]["input"],
+                run["tokens"]["cachedInput"],
+                run["tokens"]["output"],
+                run["modelCalls"],
+            ]
+            for run in runs
+        ],
+    )
+    titles = (
+        "A completed experiment, not another run",
+        "Azure usage, retained from the real measurement",
+        "One bounded, human-approved proposal",
+        result,
+        "Missing prices must not become zero cost",
+        "Traceable evidence and clear limits",
+    )
+    bodies = (
+        f"<p class='lead'>{html.escape(case.question)}</p>"
+        + archive_table(
+            ("Candidate inventory case", "Retained result"),
+            [
+                ["HTTP status", inventory.http_status],
+                ["Answer status", inventory.answer_status],
+                ["Evaluation", "Passed" if not inventory.failures else "Failed"],
+                ["Measured model calls", len(inventory.model_usage)],
+            ],
+        )
+        + "<p>Agents: "
+        + html.escape(" > ".join(inventory.agent_calls))
+        + "</p><p class='note'>Evaluation metadata from the completed experiment. "
+        "The original response text and inventory rows were not archived; "
+        "this presentation does not recreate them.</p>",
+        "<p class='lead'>Azure Container Apps > Azure OpenAI > Application Insights<br>"
+        "FinOps hub / Azure Data Explorer > pricing and read-only context</p>"
+        + usage_table
+        + "<p class='note'>Archived measured usage, not a live workbook or new telemetry. "
+        "Two baseline passes and one candidate pass used the same seven golden questions.</p>",
+        "<p class='lead'>Send each specialist only its approved, complete table definitions.</p>"
+        "<p>Both schema arguments changed in <code>agents.py</code>. "
+        "Model, data, agent topology, evaluator, and guardrails stayed fixed.</p>"
+        "<p>Four bounded, read-only context tools:</p><ul>"
+        + "".join(f"<li>{html.escape(context['tool'])}</li>" for context in proposal["context"])
+        + "</ul><p class='revision'>Baseline: "
+        + html.escape(proposal["revisions"]["baseline"])
+        + "<br>Candidate: "
+        + html.escape(proposal["revisions"]["candidate"])
+        + "</p>",
+        cost_table + f"<p>Baseline mean: USD {baseline:.4f}; candidate: USD {candidate:.4f} "
+        "per 1,000 successful evaluated answers.</p>"
+        "<p>All measured model consumption enters the numerator. Each pass evaluated "
+        f"{runs[0]['requestCount']} questions, with {runs[0]['successfulAnswers']} "
+        f"successful answers and {runs[0]['expectedNonAnswers']} expected nonanswers.</p>"
+        "<p class='note'>Accept requires 100% quality, zero HTTP errors, complete prices, "
+        "at most 20% p95 regression, and improvement above both 5% and baseline cost variation. "
+        "Original baseline cost variation: "
+        + html.escape(str(comparison["baselineCostSpreadPercent"]))
+        + "%.</p>",
+        "<p class='lead'>Synthetic replay: remove the output-token meter from a copy.</p>"
+        "<p>Unchanged evaluator, original evaluation clock, unchanged original price dates.</p>"
+        "<p class='result'>"
+        + html.escape(evidence["negative"]["result"]["decision"].upper())
+        + " | Incomplete evidence | No accepted saving</p>"
+        "<p>No model call, live price change, or deployed-app change. "
+        "The original experiment decision remains "
+        + html.escape(decision)
+        + ".</p><p class='note'>This is an isolated synthetic negative case, "
+        "not a second live experiment and not a live incident.</p>",
+        "<p class='lead'>Reuse the sample, context adapters, protected experiment, "
+        "evaluator, and evidence handoff.</p>"
+        "<p>Measured UTC: "
+        + html.escape(evidence["startUtc"])
+        + "<br>through "
+        + html.escape(evidence["endUtc"])
+        + "</p><p>Original pricing as of: "
+        + html.escape(str(freshness["pricingAsOf"]))
+        + "<br>Original seven-day price freshness cutoff: "
+        + html.escape((utc(freshness["pricingAsOf"]) + timedelta(days=7)).isoformat())
+        + "</p><p class='note'>Historical prices, not current prices or invoice savings. "
+        "Small sequential PoC; infrastructure, telemetry, builds, and warm-up are excluded. "
+        "Experiment temporary-app cleanup was verified in the retained receipt. "
+        "This deck does not prove a new clean rebuild or retained-sandbox teardown, "
+        "or authorize either operation.</p>"
+        "<p>Package hashes: <a href='manifest.json'>manifest</a>. "
+        "Hashes establish local integrity, not an independent signature.</p>",
+    )
+    narration = (
+        "An AI assistant can give the right answer and still use more context than it needs. "
+        "This synthetic retail example asks which products are below their reorder point. "
+        "The real experiment has already completed. Here is its retained inventory evaluation: "
+        "the HTTP and answer status, evaluation result, and cooperating agents. The original "
+        "response text was not archived, so I am not recreating a chat answer. Everything "
+        "in this walkthrough is archived evidence, not a new model request.",
+        "The sample uses Azure Container Apps and Azure OpenAI. Application Insights captures "
+        "correlated model usage, while the FinOps hub in Azure Data Explorer supplies pricing "
+        "and read-only context. These are the actual retained token counts and model calls, "
+        "not a live workbook. The experiment fixed the data, model, seven questions, pacing, "
+        "and evaluation rules, then measured the baseline twice before the candidate. "
+        "Historical sample costs are context, not current sandbox spend.",
+        "The design-time optimizer used four bounded, read-only tools: cost summary, resource "
+        "costs, cached recommendations, and current pricing. The recorded proposal narrowed "
+        "both specialist schema arguments to the complete table definitions approved for "
+        "that question. The model, data, agent topology, evaluator, and guardrails stayed "
+        "fixed. The context predates the measurement, and the exact revisions are retained. "
+        "Publication, deployment, paid traffic, and cleanup have separate human approvals. "
+        "This is not an autonomous production change.",
+        "The denominator is successful evaluated answers, not model calls. All measured "
+        "consumption remains in the numerator, including nonanswers or failures. Acceptance "
+        "requires full quality, zero HTTP errors, complete prices, and no more than twenty "
+        "percent p95 latency regression. Cost improvement must exceed both five percent "
+        "and baseline variation. "
+        f"The original decision was {decision}. Baseline mean cost was {baseline:.4f} "
+        f"and candidate cost was {candidate:.4f} US dollars per one thousand successful "
+        f"evaluated answers. {result}. This is a small sequential proof of concept, "
+        "not a statistically powered benchmark or an invoice saving.",
+        "This synthetic negative test removes the output-token meter from an isolated copy. "
+        "The unchanged evaluator uses the original evaluation time and unchanged price dates. "
+        "The result is repeat with incomplete evidence. Unknown cost does not become zero. "
+        "No live price, deployed app, or original decision changed.",
+        "A partner can reuse the standalone sample, bounded context adapters, protected "
+        "experiment, evaluator, and evidence handoff with another approved workload. The "
+        "value is a traceable design-time decision, including reasons to reject or repeat. "
+        "The original measurement and price dates remain visible. Estimates exclude "
+        "infrastructure, telemetry, builds, and warm-up. This offline presentation does not "
+        "prove a new rebuild or retained-sandbox teardown. Resources still retained can "
+        "remain billable until separately approved cleanup. This is a working proof of "
+        "concept, not a production-ready autonomous optimizer.",
+    )
+    output.mkdir(parents=True)
+    report = {
+        "version": 1,
+        "mode": "archived",
+        "ready": False,
+        "archiveReady": True,
+        "historicalEvidenceVerified": True,
+        "issueComplete": False,
+        "label": "Archived experiment walkthrough; not live readiness or current-price savings",
+        "preparedUtc": now.isoformat(),
+        "experimentId": evidence["experimentId"],
+        "producer": evidence["producer"],
+        "decision": comparison["decision"],
+        "startUtc": evidence["startUtc"],
+        "endUtc": evidence["endUtc"],
+        "currentPriceProblems": evidence["currentPriceProblems"],
+        "limitations": [
+            "No new model requests, Azure queries, deployments, or cleanup.",
+            "Original answer text and rows are not reconstructed.",
+            "Live access, retention approvals, clean rebuild, recording, and submission "
+            "are not attested by this archive.",
+        ],
+    }
+    for name, value in (
+        ("preparation.json", report),
+        ("comparison.json", comparison),
+        ("experiment.json", evidence["contract"]),
+        ("negative.json", evidence["negative"]),
+        ("pricing.json", pricing_export(evidence["pricing"])),
+        ("materials.json", materials),
+        ("request-summary.json", request_summary),
+    ):
+        write(output / name, value)
+    filenames = ["index.html", *(f"scene-{number}.html" for number in range(2, 7))]
+    style = (
+        "<style>body{margin:0;background:#f6f8fc;color:#17233b;font:18px system-ui}"
+        "main{box-sizing:border-box;max-width:1180px;margin:auto;padding:20px 28px;"
+        "min-height:100vh;display:flex;flex-direction:column}"
+        "header,.note{font-size:15px;color:#425675}header{border-bottom:2px solid #1976c9;"
+        "padding-bottom:10px}h1{font-size:30px;line-height:1.2;color:#123e70}"
+        "article{flex:1}.lead,.result{font-size:24px;color:#123e70}.revision{font:15px monospace}"
+        "table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;"
+        "padding:9px;border-bottom:1px solid #d5deec}th{font-size:15px}"
+        "li{margin:5px 0}nav{display:flex;align-items:center;justify-content:space-between;"
+        "gap:20px;border-top:1px solid #b7c8df;padding-top:12px;margin-top:12px}"
+        "a{color:#124f91}nav a{padding:10px 15px;background:#dcecff;border-radius:6px}"
+        "@media print{main{min-height:0}nav{display:none}section{break-inside:avoid}}</style>"
+    )
+    for index, (title, body, filename) in enumerate(zip(titles, bodies, filenames, strict=True)):
+        previous = filenames[max(0, index - 1)]
+        following = filenames[index + 1] if index < 5 else filenames[0]
+        page = (
+            '<!doctype html><html lang="en"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; '
+            "style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'\">"
+            f"<title>Archived FinOps demo - scene {index + 1}</title>{style}<main>"
+            "<header>Archived real experiment | Synthetic retail data | "
+            "Public-retail model-only estimates | No live requests</header>"
+            f"<article><h1>{html.escape(title)}</h1>{body}</article>"
+            f"<nav><a href='{previous}'>Previous scene</a>"
+            f"<span>Scene {index + 1} of 6</span>"
+            f"<a href='{following}'>{'Next scene' if index < 5 else 'Start again'}</a>"
+            "</nav></main></html>"
+        )
+        (output / filename).write_text(page + "\n", encoding="utf-8")
+    script = (
+        '<!doctype html><html lang="en"><meta charset="utf-8">'
+        f"<title>Archived demo narration</title>{style}<main>"
+        "<h1>Your recording script</h1><p>Target 4 minutes 30 seconds. "
+        "Read from paper or a second screen outside the recorded area.</p>"
+        + "".join(
+            f"<section><h2>{SCENES[index][0]} - {html.escape(title)}</h2>"
+            f"<p>{html.escape(words)}</p></section>"
+            for index, (title, words) in enumerate(zip(titles, narration, strict=True))
+        )
+        + "</main></html>"
+    )
+    (output / "narration.html").write_text(script + "\n", encoding="utf-8")
+    seal_package(root, output)
     return report
 
 
@@ -667,14 +964,15 @@ def show(directory: Path, *, pause: bool = True, open_links: bool = False) -> No
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    preparation = commands.add_parser("prepare")
-    preparation.add_argument("--input", type=Path, required=True)
-    preparation.add_argument("--output", type=Path, required=True)
-    preparation.add_argument(
-        "--questions",
-        type=Path,
-        default=Path("hack/sample-multi-agent-workload/tests/evaluation/questions.json"),
-    )
+    for name in ("prepare", "archive"):
+        preparation = commands.add_parser(name)
+        preparation.add_argument("--input", type=Path, required=True)
+        preparation.add_argument("--output", type=Path, required=True)
+        preparation.add_argument(
+            "--questions",
+            type=Path,
+            default=Path("hack/sample-multi-agent-workload/tests/evaluation/questions.json"),
+        )
     for command in ("show", "verify"):
         child = commands.add_parser(command)
         child.add_argument("--directory", type=Path, required=True)
@@ -683,10 +981,11 @@ def main() -> None:
             child.add_argument("--open-links", action="store_true")
     args = parser.parse_args()
     try:
-        if args.command == "prepare":
-            report = prepare(args.input, args.output, args.questions, now=datetime.now(UTC))
+        if args.command in ("prepare", "archive"):
+            export = prepare_archive if args.command == "archive" else prepare
+            report = export(args.input, args.output, args.questions, now=datetime.now(UTC))
             print(json.dumps(report, indent=2))
-            if not report["ready"]:
+            if not report.get("archiveReady", report["ready"]):
                 raise SystemExit(2)
         elif args.command == "verify":
             print(json.dumps(verify(args.directory), indent=2))

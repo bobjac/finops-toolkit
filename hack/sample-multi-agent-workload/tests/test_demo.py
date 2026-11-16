@@ -427,3 +427,62 @@ def test_guided_presentation_never_opens_links_by_default(
     save(output / "manifest.json", manifest)
     with pytest.raises(ValueError, match="Not recording-ready"):
         demo.show(output, pause=False)
+
+
+def test_archive_uses_original_evidence_without_live_materials(tmp_path: Path) -> None:
+    root = inputs(tmp_path)
+    for name in ("viewer.json", "retention.json", "opening.json"):
+        (root / name).unlink()
+    for path in (root / "screenshots").iterdir():
+        path.unlink()
+    original = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    output = tmp_path / "archive"
+    report = demo.prepare_archive(root, output, QUESTIONS, now=NOW + timedelta(days=40))
+    assert report["archiveReady"]
+    assert not report["ready"]
+    assert not report["issueComplete"]
+    assert report["currentPriceProblems"]
+    assert demo.verify(output) == report
+    assert demo.read(output / "comparison.json") == demo.read(root / "experiment/decision.json")
+    assert demo.read(output / "pricing.json")["freshness"] == pricing()["freshness"]
+    assert demo.read(output / "materials.json").keys() == {"proposal"}
+    assert demo.read(output / "request-summary.json")["evaluationPassed"]
+    assert demo.read(output / "negative.json")["result"]["decision"] == "repeat"
+    assert all(path.read_bytes() == value for path, value in original.items())
+    page = (output / "index.html").read_text()
+    assert "original response text and inventory rows were not archived" in page
+    assert "No live requests" in page
+    assert "next scene" in page.lower()
+    assert "Archived measured usage, not a live workbook" in (output / "scene-2.html").read_text()
+    assert not any(b"never-export-this" in path.read_bytes() for path in output.iterdir())
+    with pytest.raises(ValueError, match="Not recording-ready"):
+        demo.show(output, pause=False)
+    (output / "scene-4.html").write_text("Altered result")
+    with pytest.raises(ValueError, match="integrity"):
+        demo.verify(output)
+
+
+@pytest.mark.parametrize("name", ["experiment/decision.json", "context/get_cost_summary.json"])
+def test_archive_rejects_altered_originals(tmp_path: Path, name: str) -> None:
+    root = inputs(tmp_path)
+    changes = (
+        {"costChangePercent": "-99"} if "decision" in name else {"observedAt": NOW.isoformat()}
+    )
+    mutate(root, name, changes)
+    with pytest.raises(ValueError):
+        demo.prepare_archive(root, tmp_path / "archive", QUESTIONS, now=NOW + timedelta(days=8))
+    assert not (tmp_path / "archive").exists()
+
+
+def test_archive_requires_proposal_and_does_not_overwrite(tmp_path: Path) -> None:
+    root = inputs(tmp_path)
+    proposal = (root / "proposal.json").read_bytes()
+    (root / "proposal.json").unlink()
+    output = tmp_path / "archive"
+    with pytest.raises(ValueError, match="original recorded proposal"):
+        demo.prepare_archive(root, output, QUESTIONS, now=NOW)
+    assert not output.exists()
+    (root / "proposal.json").write_bytes(proposal)
+    demo.prepare_archive(root, output, QUESTIONS, now=NOW)
+    with pytest.raises(ValueError, match="never overwrite"):
+        demo.prepare_archive(root, output, QUESTIONS, now=NOW)
