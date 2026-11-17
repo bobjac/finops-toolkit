@@ -6,8 +6,10 @@ claim. Keep [issue #14](https://github.com/bobjac/finops-toolkit/issues/14) open
 until the clean rehearsal, video, and portal submission are verified.
 
 **Demo story:** Use the [workflow-led recording script](workflow-script.md) to
-show the coding agent, bounded change, completed experiment, and verified decision.
-Its live views still need a read-only rehearsal; no experiment rerun is required.
+follow exact Mac clicks alongside the narration, using the original context
+response, bounded code change, completed experiment, and verified decision.
+It lists every file and website to open. Live MCP/workbook views are optional
+and still need a read-only rehearsal; no experiment rerun is required.
 
 **Recording on a Mac?** Follow the [click-by-click Mac recording guide](record-on-mac.md)
 to record the already completed experiment without running commands yourself.

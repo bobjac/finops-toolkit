@@ -6,9 +6,10 @@ record its six scenes and your narration, review the video, and submit it.
 You don't need Terminal, PowerShell, Azure commands, or a new model request.
 
 **For the workflow-led demo, use the [rewritten demo script](workflow-script.md).**
-It shows the coding agent investigating, proposing a narrow change, and using
-the completed experiment to reach a decision. Its additional agent/MCP and
-workbook views still need an assistant-led read-only rehearsal.
+It now includes [exact files and nine-tab setup](workflow-script.md#open-these-files-and-tabs-before-recording),
+Mac clicks beside each narration section, and the original recorded adapter
+response. That route needs no live MCP conversation or workbook. Those are
+separate optional views that still need assistant-led rehearsal.
 The six-page presentation and `narration.html` below remain the offline fallback.
 Use this page's microphone, capture, trimming, and export steps for either version.
 

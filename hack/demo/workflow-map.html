@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'">
+  <title>FinOps toolkit to coding-agent planner</title>
+  <style>
+    body { margin: 0; background: #f6f8fc; color: #17233b; font: 18px system-ui; }
+    main { box-sizing: border-box; max-width: 1180px; margin: auto; padding: 24px 28px; }
+    header, footer { font-size: 15px; color: #425675; }
+    header { border-bottom: 2px solid #1976c9; padding-bottom: 10px; }
+    h1 { font-size: 32px; color: #123e70; }
+    h2 { font-size: 23px; margin-top: 0; }
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    section { padding: 22px; background: white; border: 1px solid #d5deec; border-radius: 8px; }
+    p { line-height: 1.5; }
+    .flow { padding: 18px; border-left: 4px solid #1976c9; background: #dcecff; line-height: 1.7; }
+    footer { border-top: 1px solid #b7c8df; padding-top: 12px; }
+    @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>FinOps design-time optimizer | A completed experiment, not another run</header>
+    <h1>From operating cost to coding decisions</h1>
+    <div class="panels">
+      <section>
+        <h2>Existing Microsoft FinOps toolkit</h2>
+        <p>An open-source collection for understanding and optimizing cloud costs.</p>
+        <p>FinOps hubs organize cost data. Reports, optimization recommendations,
+          and automation help teams act on it.</p>
+      </section>
+      <section>
+        <h2>Our proof of concept</h2>
+        <p>Give a coding-agent planner bounded, read-only operational cost context.</p>
+        <p>Test its proposed code change against a baseline. Check cost, answer
+          quality, errors, and latency before recommending adoption.</p>
+      </section>
+    </div>
+    <p class="flow">
+      <strong>Operational cost + pricing data</strong> &rarr; read-only tools
+      &rarr; coding-agent planner<br>
+      &rarr; code proposal &rarr; human-approved experiment &rarr; measured decision
+    </p>
+    <footer>
+      Demo context: synthetic June 2024 cost history, not current application spend.<br>
+      Real Azure model usage measured November 13, 2026. Historical model-only estimates, not invoice savings.
+    </footer>
+  </main>
+</body>
+</html>
