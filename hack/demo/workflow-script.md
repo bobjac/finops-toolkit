@@ -2,8 +2,8 @@
 
 **Target: 4 minutes 30 seconds.** Show the workflow, not a tour of dashboards:
 
-**Original code -> read-only FinOps context -> bounded proposal -> controlled
-experiment -> evidence-backed decision.**
+**FinOps toolkit operational cost data -> coding-agent planner -> bounded code
+proposal -> controlled experiment -> evidence-backed decision.**
 
 The experiment is already complete. You don't need to rerun it or execute
 commands to record this story. The assistant prepares the views off camera;
@@ -16,13 +16,21 @@ remain unchanged and are a fallback, not this new workflow script.
 
 ## What the audience should understand
 
-> We built a workflow that helps a coding agent propose a lower-cost
-> implementation, then checks the proposal against measured cost, answer
-> quality, and performance before recommending adoption.
+> We expose FinOps toolkit operational cost data to a coding-agent planner
+> through bounded, read-only tools, then test its proposed code change against
+> measured cost, answer quality, and performance before recommending adoption.
 
-The coding agent, bounded context adapters, protected experiment runner,
-evaluator, and evidence handoff are the product. MCP and the workbook help
-demonstrate it; neither is the whole product.
+The [existing toolkit](../../docs-mslearn/toolkit/finops-toolkit-overview.md#available-tools)
+provides cost-data infrastructure, reporting, optimization recommendations, and
+automation. It also has agent integration. Don't describe it as only a dashboard
+or claim this PoC invented its first agent connection.
+
+The gap addressed here is narrower: cost analysis or a recommendation alone
+doesn't establish whether a particular repository change lowers cost while
+preserving behavior. Our PoC adds bounded operational context for the planner
+and a controlled experiment/evaluator loop. MCP and the workbook help demonstrate
+that workflow; neither is the whole contribution. The demo's historical cost
+context is synthetic, not current billed spend for the sample application.
 
 ## Screen order
 
@@ -32,10 +40,10 @@ or run an experiment during the take.
 
 | Scene | Time | Screen |
 |---|---|---|
-| 1. The problem | 0:00-0:35 | Original baseline `agents.py`, showing both full-schema arguments |
-| 2. The investigation | 0:35-1:25 | Coding-agent review, genuine read-only tool-call details, and original context provenance |
-| 3. The proposal | 1:25-2:00 | Exact baseline-to-candidate diff |
-| 4. The test | 2:00-2:45 | Previously completed GitHub experiment run and its completed job steps |
+| 1. The toolkit and the gap | 0:00-0:50 | Toolkit overview and data-to-planner flow, then original baseline `agents.py` |
+| 2. The investigation | 0:50-1:35 | Coding-agent review, genuine read-only tool-call details, and original context provenance |
+| 3. The proposal | 1:35-2:05 | Exact baseline-to-candidate diff |
+| 4. The test | 2:05-2:45 | Previously completed GitHub experiment run and its completed job steps |
 | 5. The decision | 2:45-3:45 | Workbook token usage, then the original evaluated comparison |
 | 6. The safety check and value | 3:45-4:30 | Labeled missing-price replay, then the narrow diff or original decision |
 
@@ -44,28 +52,41 @@ the offline presentation. The [Mac guide](record-on-mac.md) still supplies
 microphone, capture, trimming, and export instructions. Use this document for
 the workflow narration instead of the archived deck's `narration.html`.
 
-## 1. The problem, 0:00-0:35
+## 1. The toolkit and the gap, 0:00-0:50
 
-**Show:** The [original baseline code](https://github.com/bobjac/finops-toolkit/blob/c9df575ea8fa90cfec45072085d9919e21a12068/hack/sample-multi-agent-workload/src/sample_workload/agents.py).
+**Show first:** The [FinOps toolkit overview](../../docs-mslearn/toolkit/finops-toolkit-overview.md),
+briefly, with this flow visible as an on-screen caption:
+
+```text
+FinOps toolkit: operational cost + pricing data
+  -> bounded, read-only tools -> coding-agent planner
+  -> proposed code change -> human-approved experiment -> measured decision
+```
+
+**Then show:** The [original baseline code](https://github.com/bobjac/finops-toolkit/blob/c9df575ea8fa90cfec45072085d9919e21a12068/hack/sample-multi-agent-workload/src/sample_workload/agents.py).
 Enlarge the two places where `"schema": SCHEMA` supplies the full schema.
 Use the historical baseline, not the current, already optimized checkout.
 Don't edit anything.
 
 **Say:**
 
-> AI coding assistants can change code quickly. But how do we know a proposed
-> optimization actually costs less without making the application worse?
+> The Microsoft FinOps toolkit is an open-source collection for understanding
+> and optimizing cloud costs. Its hubs organize cost data, and its reports,
+> recommendations, and automation help teams act on it.
 >
-> We built an evidence-backed optimization workflow for coding agents.
-> This sample uses several agents to answer retail questions. In the original
-> code, both specialists receive the full database schema, even when a question
-> needs only a few tables. That's our hypothesis: less unnecessary context,
-> with the same correct answers.
+> But cost analysis alone doesn't prove a proposed code change will be cheaper.
+>
+> Our proof of concept exposes operational cost data to a coding-agent planner
+> through bounded, read-only tools, then measures its proposal against a baseline.
+>
+> This demo uses synthetic historical cost data. Our sample sends the full
+> database schema to both specialists. Can we send less context and keep
+> the same correct answers?
 
 **Action:** Point to the two schema arguments, then switch to the prepared
 coding-agent review.
 
-## 2. The investigation, 0:35-1:25
+## 2. The investigation, 0:50-1:35
 
 **Show:** A genuine completed read-only review of that original baseline.
 Expand one actual Azure MCP Kusto query and its returned FinOps context.
@@ -104,7 +125,7 @@ not four tools on a newly built MCP server. The plugin separately configures
 the read-only Azure MCP Kusto integration. Never fabricate a tool-call card or
 describe a new review as the original session that produced the experiment.
 
-## 3. The proposal, 1:25-2:00
+## 3. The proposal, 1:35-2:05
 
 **Show:** The [exact source comparison](https://github.com/bobjac/finops-toolkit/compare/c9df575ea8fa90cfec45072085d9919e21a12068...79a087dce14212ac6f47d090860001dbfa0fb47b),
 focused on `agents.py`. Show both changed schema arguments.
@@ -124,7 +145,7 @@ focused on `agents.py`. Show both changed schema arguments.
 **Action:** Point to one replacement, then the other. Don't ask the agent to
 make another edit or create a new candidate.
 
-## 4. The test, 2:00-2:45
+## 4. The test, 2:05-2:45
 
 **Show:** The [completed experiment run, attempt 1](https://github.com/bobjac/finops-toolkit/actions/runs/43351201733/attempts/1).
 Open the completed experiment job and locate its measurement and cleanup
@@ -218,8 +239,10 @@ This is work for the assistant/operator, not commands for the person recording.
 It is **not** permission to rerun the experiment, grant roles, deploy, refresh
 prices, or invoke the application.
 
-1. Stage the original baseline and exact diff read-only. Don't switch the
-   working tree to the baseline or alter the measured revisions.
+1. Stage the toolkit overview, the data-to-planner caption, the original
+   baseline, and the exact diff. Don't switch the working tree to the baseline
+   or alter the measured revisions. Keep the introduction to the toolkit brief;
+   this isn't a tour of every component.
 2. Rehearse a bounded read-only review. If demonstrating MCP, verify the
    configured Azure MCP Kusto connection and actual query access first.
    Capture a genuine successful call; stop on denied access rather than
