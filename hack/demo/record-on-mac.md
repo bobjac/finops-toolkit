@@ -5,6 +5,13 @@ The assistant prepares and checks the archived presentation. Your job is to
 record its six scenes and your narration, review the video, and submit it.
 You don't need Terminal, PowerShell, Azure commands, or a new model request.
 
+**For the workflow-led demo, use the [rewritten demo script](workflow-script.md).**
+It shows the coding agent investigating, proposing a narrow change, and using
+the completed experiment to reach a decision. Its additional agent/MCP and
+workbook views still need an assistant-led read-only rehearsal.
+The six-page presentation and `narration.html` below remain the offline fallback.
+Use this page's microphone, capture, trimming, and export steps for either version.
+
 The presentation is an **archived walkthrough of a real completed experiment**.
 It isn't a new live run or a current-price quote. The original response text
 wasn't retained, so the opening shows actual evaluation metadata, not a
@@ -42,11 +49,17 @@ is required. These instructions use macOS Tahoe 26; some labels vary by version.
 The assistant supplies the actual local folder and opens the checked presentation.
 Don't download the source repository and try to build a presentation yourself.
 
-1. Use the browser window opened by the assistant. Its first scene says
-   **A completed experiment, not another run**.
-2. To reopen it later, open the presentation folder in Finder and double-click
-   **index.html**. If it opens in an editor, right-click it and choose
-   **Open With > Microsoft Edge** or **Google Chrome**.
+1. Open **Finder** and use **Shift+Command+G**. Paste this saved folder path,
+   then select **Return**:
+
+   ```text
+   ~/Movies/FinOps demo/Archived experiment 43351201733
+   ```
+
+2. Double-click **index.html**. If it opens in an editor, right-click it and
+   choose **Open With > Microsoft Edge** or **Google Chrome**. Its first
+   scene says **A completed experiment, not another run**. This works after
+   a reboot; it doesn't depend on a window previously opened by the assistant.
 3. Select **Next scene** at the bottom. Confirm you can move through all six
    scenes. On scene 6, select **Start again** to return to the beginning.
 4. Open **narration.html** from the same folder, off camera. It contains the
@@ -122,6 +135,10 @@ Rename the test file `microphone-and-screen-test.mov` so it can't be mistaken
 for your final video.
 
 ## 4. Record the six scenes
+
+This section is for the offline fallback. For the workflow-led version, follow
+the [workflow script's screen order and narration](workflow-script.md#screen-order)
+instead; don't read the deck's older `narration.html` over different screens.
 
 Read **narration.html** aloud once before recording. It is the complete script;
 the table below tells you when to move to the next scene. If the rehearsal
